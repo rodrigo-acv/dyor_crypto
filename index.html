@@ -66,29 +66,72 @@
     }
 
     /* CONTRATO */
-    .card-contract {
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      width: 30%;
-      min-width: 300px;
-      background-color: #fff;
-      font-family:'Poppins', sans-serif; /* Fonte individual */
-      font-size: 13px; /* Tamanho de fonte individual */
-    }
+          .card-contract {
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 22%;
+            min-width: 220px;
+            background-color: #fff;
+            font-family:'Poppins', sans-serif; /* Fonte individual */
+            font-size: 13px; /* Tamanho de fonte individual */
+          }
 
-    .card-contract table {
-      width: 100%;
-      border-collapse: collapse;
-      font-family:'Poppins', sans-serif; /* Fonte individual para tabela */
-      font-size: 11px; /* Tamanho individual para tabela */
-    }
+          .card-contract table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family:'Poppins', sans-serif; /* Fonte individual para tabela */
+            font-size: 11px; /* Tamanho individual para tabela */
+          }
 
-    .card-contract th, .card-contract td {
-      border: 1px solid #ccc;
-      padding: 10px;
-      text-align: left;
-    }
+          .card-contract th, .card-contract td {
+            border: 1px solid #ccc;
+            padding: 2cqw
+            text-align: left;
+          }
+
+
+          .copy-btn {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 18px;
+          margin-left: 10px;
+          color: #007bff; /* Azul padrão */
+          transition: transform 0.2s, color 0.2s;
+          }
+
+          .copy-btn:hover {
+          color: #0056b3; /* Azul mais escuro ao passar o mouse */
+          transform: scale(1.2); /* Efeito de leve aumento */
+          }
+
+          .copy-btn:active {
+          transform: scale(0.9); /* Efeito ao clicar */
+          }
+
+          /* Tooltip (comentário com o contrato completo) */
+          .copy-btn::after {
+            content: attr(title);
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+
+          .copy-btn:hover::after {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(-25px);
+          }
+
+
 
     /* TOKENOMICS */
     .card-tokenomics {
@@ -319,6 +362,22 @@
       const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${crypto}`);
       const data = response.data;
 
+      document.getElementById("cryptoData").style.visibility = "visible";
+
+      //INFORMAÇÕES: INICIAIS
+
+      // Pegando o local onde será exibida a atualização
+      const updateInfo = document.getElementById("update-info");
+
+      // Criando a data formatada
+      const now = new Date();
+      const formattedDate = now.toLocaleString(); // Data e hora local
+
+      // Definindo o texto com a data e a API
+      updateInfo.innerHTML = `📅 Atualização: ${formattedDate} | 🔗 Fonte de Dados: <a href="https://www.coingecko.com/" target="_blank">CoinGecko API</a>`;
+
+
+
       document.getElementById("name").innerText = data.name;
       document.getElementById("symbol").innerText = data.symbol.toUpperCase();
       document.getElementById("rank").innerText = data.market_cap_rank;
@@ -342,15 +401,7 @@
       document.getElementById("percentBloqueado").nextElementSibling.innerText = "100 - % Liberado";
       document.getElementById("volume24h").nextElementSibling.innerText = `Volume 24h (${formatNumber(data.market_data.total_volume.usd)}) / MarketCap (${formatNumber(data.market_data.market_cap.usd)})`;
       
-      const contractBody = document.getElementById("contractBody");
-      contractBody.innerHTML = "";
-      Object.entries(data.platforms).forEach(([network, address]) => {
-        const row = `<tr><td>${network}</td><td>${address}</td></tr>`;
-        contractBody.innerHTML += row;
-      });
-
-      document.getElementById("cryptoData").style.visibility = "visible";
-
+      //CARD: INFORMAÇÕES
       const socials = data.links;
       let socialIcons = "";
       const socialMap = {
@@ -369,17 +420,47 @@
       document.getElementById("socials").innerHTML = socialIcons;
 
 
-      // Pegando o local onde será exibida a atualização
-      const updateInfo = document.getElementById("update-info");
 
-      // Criando a data formatada
-      const now = new Date();
-      const formattedDate = now.toLocaleString(); // Data e hora local
+      //CARD: CONTRATO
+      const contractBody = document.getElementById("contractBody");
+      contractBody.innerHTML = "";
 
-      // Definindo o texto com a data e a API
-      updateInfo.innerHTML = `📅 Atualização: ${formattedDate} | 🔗 Fonte de Dados: <a href="https://www.coingecko.com/" target="_blank">CoinGecko API</a>`;
+      Object.entries(data.platforms).forEach(([network, address]) => {
+          const shortenedAddress = address.slice(0, 6) + "..." + address.slice(-6);
+    
+        // Criando a linha da tabela
+        const row = document.createElement("tr");
+        
+        // Criando a célula da rede
+        const networkCell = document.createElement("td");
+        networkCell.textContent = network;
+        
+        // Criando a célula do endereço
+        const addressCell = document.createElement("td");
+        addressCell.innerHTML = `<span class="full-address" style="display:none;">${address}</span>
+                                <span class="short-address">${shortenedAddress}</span>`;
 
+        // Criando o botão de copiar com ícone real
+        const copyButton = document.createElement("button");
+        //copyButton.innerHTML = "&#x2398;"; // Ícone real de copiar (dois quadrados sobrepostos)
+        copyButton.innerHTML = "📋"
+        copyButton.classList.add("copy-btn");
+        copyButton.title = address; // Tooltip ao passar o mouse
+        copyButton.onclick = () => {
+            navigator.clipboard.writeText(address).then(() => {
+                copyButton.innerHTML = "✅"; // Ícone de check após copiar
+                //setTimeout(() => copyButton.innerHTML = "&#x2398;", 2000); // Volta para ícone original
+                setTimeout(() => copyButton.innerHTML = "📋", 2000); // Volta para ícone original
+            }).catch(err => console.error("Erro ao copiar:", err));
+        };
 
+          // Adicionando elementos à linha
+          addressCell.appendChild(copyButton);
+          row.appendChild(networkCell);
+          row.appendChild(addressCell);
+          
+          contractBody.appendChild(row);
+      });
 
       } catch (error) {
       alert("Moeda não encontrada ou erro na API.");
