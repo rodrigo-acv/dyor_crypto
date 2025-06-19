@@ -236,6 +236,57 @@
       opacity: 1;
     }
 
+
+    /* MARKETCAP PROGRESS BAR  */
+    .card-marketcap {
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 1110px; /* mesmo valor dos outros cards/containers */
+      margin: 0 auto;
+      background-color: #1a1a1a;
+      color: #ffffff;
+      border: 1px solid #333;
+    }
+
+  .card-marketcap h2 {
+    color: #f1c40f;      /* amarelo ouro (altere à vontade) */
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 15px;
+    }
+
+  .labels span {
+    color: #cccccc;       /* cinza claro */
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+
+        .progress-container {
+          margin-top: 20px;
+        }
+        .bar {
+          position: relative;
+          height: 20px;
+          border-radius: 0px;
+          background-color: #333333;
+          overflow: hidden;
+        }
+        .fill {
+          height: 100%;
+          background-color: #b0e0e6;
+        }
+
+        .labels {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 10px;
+          font-size: 14px;
+        }
+
+
   </style>
 </head>
 <body>
@@ -378,11 +429,27 @@
               </div>
             </td>
           </tr>   
-
         </table>
-    
     </div>
   </div>
+   
+  <div class="card-marketcap">
+    <h2>Estágio (MarketCap) : <span id="projectNameSpan"></span> </h2>
+    <div class="progress-container">
+      <div class="bar">
+        <div class="fill" id="progressFill"></div>
+      </div>
+      <div class="labels">
+        <span>Gema (até 150 M)</span>
+        <span>Pequena (até 1B)</span>
+        <span>Média (até 8B)</span>
+        <span>BlueShip (até 60B)</span>
+        <span>BigPlayer (> 60B)</span>
+      </div>
+    </div>
+  </div>
+
+
 </div>
 
 <script>
@@ -419,7 +486,7 @@
       updateInfo.innerHTML = `📅 Atualização: ${formattedDate} | 🔗 Fonte de Dados: <a href="https://www.coingecko.com/" target="_blank">CoinGecko API</a>`;
 
 
-
+      document.getElementById("projectNameSpan").textContent = data.name;
       document.getElementById("name").innerText = data.name;
       document.getElementById("symbol").innerText = data.symbol.toUpperCase();
       document.getElementById("rank").innerText = data.market_cap_rank;
@@ -575,6 +642,45 @@
       });
 
       await fetchTVLDeFiLlama(crypto);
+
+    //************************* // 
+    // MARKETCAP PROGRESS BAR   //
+    //************************* //     
+
+      // Valor dinâmico do MarketCap em dólares (exemplo real ou vindo de API)
+          const marketCapUSD = data.market_data.market_cap.usd; // 💰 Ex: 2.27 bilhões de dólares
+
+          // Faixas em bilhões
+          const stages = [0, 0.15, 1, 8, 60, 300];
+          const totalWidth = 100;
+
+          // Converter o marketcap para bilhões
+          const marketCapInBillions = marketCapUSD / 1e9;
+
+          // Calcular a porcentagem de preenchimento
+          let percentage = 0;
+          if (marketCapInBillions >= stages[5]) {
+            percentage = 100;
+          } else {
+            for (let i = 0; i < stages.length - 1; i++) {
+              if (marketCapInBillions >= stages[i] && marketCapInBillions < stages[i + 1]) {
+                const rangeStart = stages[i];
+                const rangeEnd = stages[i + 1];
+                const rangePercentStart = (i / (stages.length - 1)) * totalWidth;
+                const rangePercentEnd = ((i + 1) / (stages.length - 1)) * totalWidth;
+                const ratio = (marketCapInBillions - rangeStart) / (rangeEnd - rangeStart);
+                percentage = rangePercentStart + ratio * (rangePercentEnd - rangePercentStart);
+                break;
+              }
+            }
+          }
+
+          // Atualiza a largura da barra preenchida
+          const fill = document.getElementById('progressFill');
+          fill.style.width = `${percentage}%`;
+
+
+
 
       } catch (error) {
       alert("Moeda não encontrada ou erro na API.");
