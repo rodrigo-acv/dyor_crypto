@@ -9,11 +9,32 @@
 
 
   <style>
-    /* Estilização para cada Card separadamente com fontes e tamanhos individuais */
+
+  /*CSS */
+    a {
+      color: #00aaff;
+    }
+
+    a:hover {
+      color: #33ccff;
+    }
+
+    .copy-btn {
+      color: #00aaff;
+    }
+
+    .copy-btn:hover {
+      color: #33ccff;
+    }
+
+
+
+/* Estilização para cada Card separadamente com fontes e tamanhos individuais */
 
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f4f4f9;
+      font-family: 'Poppins', sans-serif;
+      background-color: #0d0d0d; /* Preto elegante */
+      color: #ffffff; /* Letras brancas */
       text-align: center;
       padding: 20px;
     }
@@ -47,9 +68,11 @@
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       width: 10%;
       min-width: 200px;
-      background-color: #fff;
-      font-family: Verdana, sans-serif; /* Fonte individual */
-      font-size: 13px; /* Tamanho de fonte individual */
+      background-color: #1a1a1a;  /* fundo escuro */
+      color: #ffffff;             /* texto branco */
+      border: 1px solid #333;     /* contorno sutil */
+      font-family: 'Poppins', sans-serif; /* Fonte individual */
+      font-size: 14px; /* Tamanho de fonte individual */
     }
 
     .card-info table {
@@ -57,12 +80,17 @@
       border-collapse: collapse;
       font-family:'Poppins', sans-serif; /* Fonte individual para tabela */
       font-size: 13px; /* Tamanho individual para tabela */
+      color: #ffffff;
     }
 
     .card-info th, .card-info td {
+      font-weight: normal;
       border: 1px solid #ccc;
       padding: 10px;
       text-align: left;
+      border-color: #444;
+      background-color: #1a1a1a;
+      color: #ffffff;
     }
 
     /* CONTRATO */
@@ -72,9 +100,11 @@
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
             width: 22%;
             min-width: 220px;
-            background-color: #fff;
-            font-family:'Poppins', sans-serif; /* Fonte individual */
-            font-size: 13px; /* Tamanho de fonte individual */
+            background-color: #1a1a1a;  /* fundo escuro */
+            color: #ffffff;             /* texto branco */
+            border: 1px solid #333;     /* contorno sutil */
+            font-family: 'Poppins', sans-serif; /* Fonte individual */
+            font-size: 14px; /* Tamanho de fonte individual */
           }
 
           .card-contract table {
@@ -82,12 +112,17 @@
             border-collapse: collapse;
             font-family:'Poppins', sans-serif; /* Fonte individual para tabela */
             font-size: 11px; /* Tamanho individual para tabela */
+            color: #ffffff;
           }
 
           .card-contract th, .card-contract td {
+            font-weight: normal;
             border: 1px solid #ccc;
-            padding: 2cqw
+            padding: 2cqw;
             text-align: left;
+            border-color: #444;
+            background-color: #1a1a1a;
+            color: #ffffff;
           }
 
 
@@ -140,9 +175,11 @@
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       width: 40%;
       min-width: 400px;
-      background-color: #fff;
-      font-family:'Poppins', sans-serif; /* Fonte individual */
-      font-size: 13px; /* Tamanho de fonte individual */
+      background-color: #1a1a1a;  /* fundo escuro */
+      color: #ffffff;             /* texto branco */
+      border: 1px solid #333;     /* contorno sutil */
+      font-family: 'Poppins', sans-serif; /* Fonte individual */
+      font-size: 14px; /* Tamanho de fonte individual */
     }
 
     /* Ajusta o container das tabelas para deixá-las lado a lado */
@@ -157,12 +194,17 @@
       border-collapse: collapse;
       font-family:'Poppins', sans-serif; /* Fonte individual para tabela */
       font-size: 12px; /* Tamanho individual para tabela */
+      color: #ffffff;
     }
 
     .card-tokenomics th, .card-tokenomics td {
+      font-weight: normal;
       border: 1px solid #aaa;
       padding: 10px;
       text-align: left;
+      border-color: #444;
+      background-color: #1a1a1a;
+      color: #ffffff;
     }
 
     /* Tooltip styling */
@@ -401,6 +443,76 @@
       document.getElementById("percentBloqueado").nextElementSibling.innerText = "100 - % Liberado";
       document.getElementById("volume24h").nextElementSibling.innerText = `Volume 24h (${formatNumber(data.market_data.total_volume.usd)}) / MarketCap (${formatNumber(data.market_data.market_cap.usd)})`;
       
+
+
+      //TVL
+      // Função que tenta buscar o TVL com base no texto digitado no campo de pesquisa
+      async function fetchTVLDeFiLlama(crypto) {
+        // Obtém o elemento onde o TVL será exibido na sua tabela
+        const tvlElement = document.getElementById("tvl");
+
+        // Verifica se o elemento existe no HTML
+        if (!tvlElement) return;
+
+        // Pega o tooltip que está ao lado do valor do TVL (dentro da <span class="tooltiptext">)
+        const tooltip = tvlElement.nextElementSibling;
+
+        // --------------------------
+        // 1️⃣ TENTA BUSCAR COMO PROTOCOLO
+        // --------------------------
+        try {
+          // Exemplo de chamada: https://api.llama.fi/tvl/kamino
+          const resProtocol = await axios.get(`https://api.llama.fi/tvl/${crypto}`);
+
+          // Aqui, resProtocol.data já retorna o valor do TVL direto (número em USD)
+          const tvlFromProtocol = resProtocol.data;
+
+          // Verifica se veio um número
+          if (typeof tvlFromProtocol === "number") {
+            tvlElement.innerText = "US$ " + formatNumber(tvlFromProtocol);
+            tooltip.innerText = `Fonte: DeFiLlama (TVL do protocolo "${crypto}")`;
+            return; // Se encontrou, não precisa buscar como blockchain
+          }
+
+        } catch (err1) {
+          // Se der erro (ex: protocolo não encontrado), ele segue para a próxima tentativa
+          console.warn(`TVL não encontrado como protocolo: ${crypto}`);
+        }
+
+        // --------------------------
+        // 2️⃣ TENTA BUSCAR COMO BLOCKCHAIN
+        // --------------------------
+        try {
+          // Faz a requisição para obter a lista completa de blockchains disponíveis
+          const resChains = await axios.get("https://api.llama.fi/v2/chains");
+
+          // resChains.data é uma array com todos os blockchains. Exemplo:
+          // [{ name: "Solana", tvl: 12345678 }, { name: "Ethereum", tvl: 999999 }, ...]
+
+          // Faz uma busca nessa lista para encontrar a blockchain que tem o mesmo nome do que foi digitado
+          const chainData = resChains.data.find(chain =>
+            chain.name.toLowerCase() === crypto.toLowerCase()
+          );
+
+          // Se encontrou a blockchain e ela tem o campo tvl
+          if (chainData && chainData.tvl) {
+            tvlElement.innerText = "US$ " + formatNumber(chainData.tvl);
+            tooltip.innerText = `Fonte: DeFiLlama (TVL da blockchain "${chainData.name}")`;
+            return;
+          } else {
+            // Caso não encontre nem como protocolo nem como blockchain
+            tvlElement.innerText = "TVL não disponível";
+            tooltip.innerText = "TVL não encontrado nas fontes públicas";
+          }
+
+        } catch (err2) {
+          // Erro ao buscar como blockchain
+          console.error("Erro ao buscar TVL como blockchain", err2);
+        }
+      }
+
+
+
       //CARD: INFORMAÇÕES
       const socials = data.links;
       let socialIcons = "";
@@ -461,6 +573,8 @@
           
           contractBody.appendChild(row);
       });
+
+      await fetchTVLDeFiLlama(crypto);
 
       } catch (error) {
       alert("Moeda não encontrada ou erro na API.");
