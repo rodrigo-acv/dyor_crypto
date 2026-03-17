@@ -1,107 +1,102 @@
 <!DOCTYPE html>
 <!--
-  ╔══════════════════════════════════════════════════════════╗
-  ║  DYOR — Do Your Own Research  |  Crypto Dashboard        ║
-  ║  Arquivo : index.html                                    ║
-  ║  Função  : Estrutura HTML da página                      ║
-  ║                                                          ║
-  ║  ESTRUTURA DO PROJETO:                                   ║
-  ║   index.html   ← este arquivo (só HTML)                  ║
-  ║   css/         ← pasta com os estilos visuais            ║
-  ║   │ style.css  ← toda a aparência do site                ║
-  ║   js/          ← pasta com os scripts JavaScript         ║
-  ║   │ config.js  ← configurações e constantes globais      ║
-  ║   │ api.js     ← chamadas às APIs externas               ║
-  ║   │ charts.js  ← criação dos gráficos (ApexCharts)       ║
-  ║   │ form.js    ← lógica do formulário DYOR               ║
-  ║   └ main.js    ← controlador principal da página         ║
-  ╚══════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════╗
+║  DYOR — Crypto Research Dashboard                            ║
+║  Arquivo : index.html                                        ║
+║  Escopo  : SOMENTE a página inicial (antes da pesquisa)      ║
+╚══════════════════════════════════════════════════════════════╝
 -->
 <html lang="pt-BR">
-
 <head>
-  <!-- Suporte a caracteres especiais: ç, ã, é, ú... -->
   <meta charset="UTF-8">
-
-  <!-- Faz o site se adaptar ao tamanho do celular -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Texto da aba do navegador -->
   <title>DYOR — Crypto Research Dashboard</title>
 
-  <!-- ── FONTES (Google Fonts) ────────────────────────────────
-       Outfit        → fonte principal (títulos, textos)
-       JetBrains Mono → fonte de código (preços, hashes, IDs)
-       preconnect    → pré-conecta para carregar mais rápido   -->
+  <!-- Fontes externas do Google Fonts
+       Outfit        : fonte principal (títulos, textos)
+       JetBrains Mono: fonte para preços e códigos       -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- ── BIBLIOTECA DE GRÁFICOS ───────────────────────────────
-       ApexCharts → gráficos interativos (pizza, barras, linha)
-       Será usado em: js/charts.js                             -->
-  <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.48.0/dist/apexcharts.min.js"></script>
-
-  <!-- ── BIBLIOTECA HTTP ──────────────────────────────────────
-       Axios → faz chamadas às APIs (CoinGecko, DeFiLlama...)
-       Será usado em: js/api.js                                -->
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-
-  <!-- ── NOSSO CSS ────────────────────────────────────────────
-       Todo o visual do site fica neste arquivo separado       -->
+  <!-- Todo o visual do site -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 
 <body>
 
-  <!-- Wrapper geral: garante que o conteúdo fique na frente do fundo decorativo -->
+  <!-- .page-wrap envolve tudo para o z-index funcionar corretamente -->
   <div class="page-wrap">
 
 
-    <!-- ═══════════════════════════════════════════════════
-         HEADER — cabeçalho fixo no topo
-         Fica visível mesmo ao rolar a página.
-         ═══════════════════════════════════════════════════ -->
+    <!-- ╔══════════════════════════════════════════════╗
+         ║  HEADER                                      ║
+         ║  Fixo no topo — sempre visível ao rolar      ║
+         ║  Logo | Status APIs | Botão imprimir         ║
+         ╚══════════════════════════════════════════════╝ -->
     <header>
 
-      <!-- Logo: clicável, leva ao topo da página -->
+      <!-- Logo clicável que leva ao topo -->
       <a class="logo" href="#">
-        <div class="logo-badge">🔍</div>  <!-- ícone quadrado roxo -->
+        <div class="logo-badge">🔍</div>
         <div>
-          <span class="logo-text">DYOR</span>          <!-- nome com gradiente -->
-          <span class="logo-sub">Crypto Research</span> <!-- subtítulo pequeno -->
+          <span class="logo-text">DYOR</span>
+          <span class="logo-sub">Crypto Research</span>
         </div>
       </a>
 
-      <!-- Pills de status das APIs (pontos que piscam) -->
+      <!-- Pílulas de status: mostram quais APIs estão conectadas
+           O ponto pisca para indicar conexão ativa               -->
       <div class="header-pills">
-        <div class="api-pill"><div class="api-pill-dot dot-green"></div>CoinGecko</div>
-        <div class="api-pill"><div class="api-pill-dot dot-violet"></div>DeFiLlama</div>
-        <div class="api-pill"><div class="api-pill-dot dot-amber"></div>Mock Data</div>
+        <div class="api-pill">
+          <div class="api-pill-dot dot-green"></div>
+          CoinGecko
+        </div>
+        <div class="api-pill">
+          <div class="api-pill-dot dot-violet"></div>
+          DeFiLlama
+        </div>
+        <div class="api-pill">
+          <div class="api-pill-dot dot-amber"></div>
+          Mock Data
+        </div>
       </div>
 
-      <!-- Botão de imprimir (abre diálogo nativo do navegador) -->
+      <!-- Botão imprimir: usa função nativa do navegador -->
       <button class="btn-print" onclick="window.print()">⎙ Imprimir</button>
 
     </header>
+    <!-- FIM HEADER -->
 
 
-    <!-- ═══════════════════════════════════════════════════
-         HERO — seção principal de busca
-         Tudo que o usuário vê ao entrar no site.
-         ═══════════════════════════════════════════════════ -->
+    <!-- ╔══════════════════════════════════════════════╗
+         ║  HERO                                        ║
+         ║  Área central da página inicial              ║
+         ║  Badge | Título | Subtítulo | Busca | Chips  ║
+         ╚══════════════════════════════════════════════╝ -->
     <section class="hero">
 
-      <!-- Badge decorativo acima do título -->
+      <!-- Bolinhas decorativas animadas no fundo do hero -->
+      <div class="hero-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+      </div>
+
+      <!-- Linha de grid decorativa (efeito visual apenas) -->
+      <div class="hero-grid-overlay"></div>
+
+      <!-- Badge pequeno acima do título -->
       <div class="hero-tag">
         <span class="hero-tag-dot"></span>
         Do Your Own Research
       </div>
 
-      <!-- Título principal (H1 = mais importante para SEO) -->
+      <!-- Título principal da página
+           .grad aplica o gradiente colorido em "criptomoeda" -->
       <h1 class="hero-h1">
         Pesquise qualquer<br>
-        <span class="grad">criptomoeda</span>  <!-- palavra com gradiente colorido -->
+        <span class="grad">criptomoeda</span>
       </h1>
 
       <!-- Descrição do que o site faz -->
@@ -110,30 +105,26 @@
         para tomar decisões informadas.
       </p>
 
-      <!-- BARRA DE BUSCA ─────────────────────────────────
-           Ao digitar e clicar em "Analisar" (ou pressionar Enter),
-           o main.js chama a função de busca em api.js              -->
+      <!-- BARRA DE BUSCA
+           id="cryptoInput" : o JS vai ler o valor digitado aqui
+           id="btnSearch"   : o JS vai adicionar o evento de clique -->
       <div class="search-wrap">
-        <div class="search-icon">🔎</div>  <!-- ícone decorativo, não clicável -->
-
-        <!-- Campo de texto: id="cryptoInput" é usado pelo JavaScript -->
+        <div class="search-icon">🔎</div>
         <input
           type="text"
           id="cryptoInput"
-          placeholder="bitcoin, ethereum, solana, sui..."
+          placeholder="Ex: bitcoin, ethereum, solana, sui..."
           autocomplete="off"
         >
-
-        <!-- Botão de pesquisa: id="btnSearch" recebe o evento no main.js -->
         <button class="search-btn" id="btnSearch">
-          <span>Analisar</span> <span>→</span>
+          <span>Analisar</span>
+          <span class="arrow">→</span>
         </button>
       </div>
 
-      <!-- CHIPS RÁPIDOS ──────────────────────────────────
-           Atalhos para as moedas mais buscadas.
-           data-id = ID exato da API do CoinGecko
-           Ao clicar, main.js preenche o campo e dispara a busca    -->
+      <!-- CHIPS RÁPIDOS
+           data-id = ID exato da moeda na API do CoinGecko
+           Ao clicar, o main.js preenche o campo e dispara a busca -->
       <div class="chips">
         <div class="chip" data-id="bitcoin">BTC</div>
         <div class="chip" data-id="ethereum">ETH</div>
@@ -146,73 +137,117 @@
         <div class="chip" data-id="render-token">RNDR</div>
       </div>
 
-      <!-- Dica de uso -->
+      <!-- Dica de uso para o usuário -->
       <p class="hero-hint">
         Use o ID do CoinGecko:
         <span class="hint-code">bitcoin</span>,
         <span class="hint-code">ethereum</span>,
         <span class="hint-code">avalanche-2</span>…
-        &nbsp;·&nbsp; Erro 429? Aguarde ~30s (limite da API gratuita)
+        &nbsp;·&nbsp;
+        Erro 429? Aguarde ~30s (limite da API gratuita)
       </p>
 
     </section>
+    <!-- FIM HERO -->
 
 
-    <!-- Barra de status: preenchida pelo main.js após a busca
-         Exemplo: "📅 16/03/2025 | 🔗 CoinGecko | 🦙 DeFiLlama" -->
-    <div id="update-info"></div>
+    <!-- ╔══════════════════════════════════════════════╗
+         ║  FEATURES — Cards de destaque               ║
+         ║  Mostra o que o site oferece                 ║
+         ╚══════════════════════════════════════════════╝ -->
+    <section class="features">
+
+      <div class="features-label">O que você vai analisar</div>
+
+      <div class="features-grid">
+
+        <div class="feat-card">
+          <div class="feat-icon">📊</div>
+          <div class="feat-title">Métricas em Tempo Real</div>
+          <div class="feat-desc">MarketCap, FDV, MC/FDV, TVL, Volume 24h, Supply circulante e muito mais via CoinGecko e DeFiLlama.</div>
+        </div>
+
+        <div class="feat-card feat-card--highlight">
+          <div class="feat-icon">📋</div>
+          <div class="feat-title">Formulário DYOR Completo</div>
+          <div class="feat-desc">6 abas de análise: Fundamentos, Tokenomics, Equipe, Mercado, Riscos e Decisão Final com score calculado.</div>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-icon">📈</div>
+          <div class="feat-title">Gráficos Interativos</div>
+          <div class="feat-desc">Visualize o estágio de mercado e a distribuição de supply com gráficos modernos e responsivos.</div>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-icon">💾</div>
+          <div class="feat-title">Salve suas Pesquisas</div>
+          <div class="feat-desc">Guarde e compare suas análises anteriores. Tudo salvo localmente no seu navegador, sem login.</div>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-icon">🚦</div>
+          <div class="feat-title">Mapa de Riscos</div>
+          <div class="feat-desc">Identifique red flags e green flags de forma visual. Histórico de hacks, concentração e descentralização.</div>
+        </div>
+
+        <div class="feat-card">
+          <div class="feat-icon">⎙</div>
+          <div class="feat-title">Exporte em PDF</div>
+          <div class="feat-desc">Imprima ou salve sua análise completa em PDF para arquivar ou compartilhar com segurança.</div>
+        </div>
+
+      </div>
+
+    </section>
+    <!-- FIM FEATURES -->
 
 
-    <!-- ═══════════════════════════════════════════════════
-         ÁREA DE RESULTADOS
-         Fica OCULTA (display:none) até o usuário pesquisar.
-         O main.js muda para display:block quando os dados chegam.
-         TODO o conteúdo aqui dentro será preenchido via JavaScript.
-         ═══════════════════════════════════════════════════ -->
-    <main class="main" id="cryptoData" style="display:none">
+    <!-- ╔══════════════════════════════════════════════╗
+         ║  FOOTER                                      ║
+         ╚══════════════════════════════════════════════╝ -->
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-logo">
+          <div class="logo-badge small">🔍</div>
+          <span class="logo-text">DYOR</span>
+        </div>
+        <p class="footer-disclaimer">
+          ⚠️ Este site é apenas uma ferramenta de pesquisa. Nada aqui constitui aconselhamento financeiro.
+          <strong>Invista com responsabilidade.</strong>
+        </p>
+        <div class="footer-apis">
+          Dados via
+          <a href="https://www.coingecko.com" target="_blank">CoinGecko</a> &amp;
+          <a href="https://defillama.com" target="_blank">DeFiLlama</a>
+        </div>
+      </div>
+    </footer>
+    <!-- FIM FOOTER -->
 
-      <!-- Conteúdo gerado pelo JavaScript após a busca:
-           • Token Bar (logo, nome, preço)
-           • Grid de Métricas (MC, FDV, Supply, TVL...)
-           • Gráficos (pizza + barras)
-           • Barra de Progresso do MarketCap
-           • Tabela de Contratos
-           • Formulário DYOR com 6 abas
-           • Pesquisas Salvas                              -->
 
-    </main>
-
-
-  </div><!-- /page-wrap -->
-
-
-  <!-- ═══════════════════════════════════════════════════
-       TOAST — notificação flutuante (canto inferior direito)
-       Exemplo: "✅ Bitcoin carregado!" ou "❌ Erro na API"
-       Controlado por main.js → função showToast()
-       ═══════════════════════════════════════════════════ -->
-  <div id="toast">
-    <span id="toastIcon">✓</span>
-    <span id="toastMsg">Mensagem</span>
-    <div class="toast-bar" id="toastBar"></div>  <!-- barra que esgota em 3s -->
   </div>
+  <!-- FIM .page-wrap -->
 
 
-  <!-- ═══════════════════════════════════════════════════
-       SCRIPTS JAVASCRIPT
-       IMPORTANTE: a ordem abaixo é obrigatória!
-       Cada arquivo depende do que veio antes.
+  <!-- ══════════════════════════════════════════════
+       SCRIPTS — carregados no final do <body>
+       A ORDEM importa! Cada arquivo depende do anterior.
+       ══════════════════════════════════════════════ -->
 
-       1. config.js → define URLs e constantes (carrega PRIMEIRO)
-       2. api.js    → usa as URLs do config.js
-       3. charts.js → usa constantes do config.js
-       4. form.js   → lógica do formulário
-       5. main.js   → usa tudo acima (carrega POR ÚLTIMO)
-       ═══════════════════════════════════════════════════ -->
+  <!-- 1. Configurações globais (URLs das APIs, constantes) -->
   <script src="js/config.js"></script>
+
+  <!-- 2. Chamadas às APIs externas (CoinGecko, DeFiLlama) -->
   <script src="js/api.js"></script>
+
+  <!-- 3. Gráficos com ApexCharts -->
   <script src="js/charts.js"></script>
+
+  <!-- 4. Lógica do formulário DYOR -->
   <script src="js/form.js"></script>
+
+  <!-- 5. Controlador principal — orquestra tudo -->
   <script src="js/main.js"></script>
 
 </body>
