@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════╗
+  ║  DYOR — Do Your Own Research  |  Crypto Dashboard        ║
+  ║  Arquivo : index.html                                    ║
+  ║  Função  : Estrutura HTML da página                      ║
+  ║                                                          ║
+  ║  ESTRUTURA DO PROJETO:                                   ║
+  ║   index.html   ← este arquivo (só HTML)                  ║
+  ║   css/         ← pasta com os estilos visuais            ║
+  ║   │ style.css  ← toda a aparência do site                ║
+  ║   js/          ← pasta com os scripts JavaScript         ║
+  ║   │ config.js  ← configurações e constantes globais      ║
+  ║   │ api.js     ← chamadas às APIs externas               ║
+  ║   │ charts.js  ← criação dos gráficos (ApexCharts)       ║
+  ║   │ form.js    ← lógica do formulário DYOR               ║
+  ║   └ main.js    ← controlador principal da página         ║
+  ╚══════════════════════════════════════════════════════════╝
+-->
+<html lang="pt-BR">
+
+<head>
+  <!-- Suporte a caracteres especiais: ç, ã, é, ú... -->
+  <meta charset="UTF-8">
+
+  <!-- Faz o site se adaptar ao tamanho do celular -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Texto da aba do navegador -->
+  <title>DYOR — Crypto Research Dashboard</title>
+
+  <!-- ── FONTES (Google Fonts) ────────────────────────────────
+       Outfit        → fonte principal (títulos, textos)
+       JetBrains Mono → fonte de código (preços, hashes, IDs)
+       preconnect    → pré-conecta para carregar mais rápido   -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- ── BIBLIOTECA DE GRÁFICOS ───────────────────────────────
+       ApexCharts → gráficos interativos (pizza, barras, linha)
+       Será usado em: js/charts.js                             -->
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.48.0/dist/apexcharts.min.js"></script>
+
+  <!-- ── BIBLIOTECA HTTP ──────────────────────────────────────
+       Axios → faz chamadas às APIs (CoinGecko, DeFiLlama...)
+       Será usado em: js/api.js                                -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+  <!-- ── NOSSO CSS ────────────────────────────────────────────
+       Todo o visual do site fica neste arquivo separado       -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <!-- Wrapper geral: garante que o conteúdo fique na frente do fundo decorativo -->
+  <div class="page-wrap">
+
+
+    <!-- ═══════════════════════════════════════════════════
+         HEADER — cabeçalho fixo no topo
+         Fica visível mesmo ao rolar a página.
+         ═══════════════════════════════════════════════════ -->
+    <header>
+
+      <!-- Logo: clicável, leva ao topo da página -->
+      <a class="logo" href="#">
+        <div class="logo-badge">🔍</div>  <!-- ícone quadrado roxo -->
+        <div>
+          <span class="logo-text">DYOR</span>          <!-- nome com gradiente -->
+          <span class="logo-sub">Crypto Research</span> <!-- subtítulo pequeno -->
+        </div>
+      </a>
+
+      <!-- Pills de status das APIs (pontos que piscam) -->
+      <div class="header-pills">
+        <div class="api-pill"><div class="api-pill-dot dot-green"></div>CoinGecko</div>
+        <div class="api-pill"><div class="api-pill-dot dot-violet"></div>DeFiLlama</div>
+        <div class="api-pill"><div class="api-pill-dot dot-amber"></div>Mock Data</div>
+      </div>
+
+      <!-- Botão de imprimir (abre diálogo nativo do navegador) -->
+      <button class="btn-print" onclick="window.print()">⎙ Imprimir</button>
+
+    </header>
+
+
+    <!-- ═══════════════════════════════════════════════════
+         HERO — seção principal de busca
+         Tudo que o usuário vê ao entrar no site.
+         ═══════════════════════════════════════════════════ -->
+    <section class="hero">
+
+      <!-- Badge decorativo acima do título -->
+      <div class="hero-tag">
+        <span class="hero-tag-dot"></span>
+        Do Your Own Research
+      </div>
+
+      <!-- Título principal (H1 = mais importante para SEO) -->
+      <h1 class="hero-h1">
+        Pesquise qualquer<br>
+        <span class="grad">criptomoeda</span>  <!-- palavra com gradiente colorido -->
+      </h1>
+
+      <!-- Descrição do que o site faz -->
+      <p class="hero-sub">
+        Métricas em tempo real + formulário de análise completo
+        para tomar decisões informadas.
+      </p>
+
+      <!-- BARRA DE BUSCA ─────────────────────────────────
+           Ao digitar e clicar em "Analisar" (ou pressionar Enter),
+           o main.js chama a função de busca em api.js              -->
+      <div class="search-wrap">
+        <div class="search-icon">🔎</div>  <!-- ícone decorativo, não clicável -->
+
+        <!-- Campo de texto: id="cryptoInput" é usado pelo JavaScript -->
+        <input
+          type="text"
+          id="cryptoInput"
+          placeholder="bitcoin, ethereum, solana, sui..."
+          autocomplete="off"
+        >
+
+        <!-- Botão de pesquisa: id="btnSearch" recebe o evento no main.js -->
+        <button class="search-btn" id="btnSearch">
+          <span>Analisar</span> <span>→</span>
+        </button>
+      </div>
+
+      <!-- CHIPS RÁPIDOS ──────────────────────────────────
+           Atalhos para as moedas mais buscadas.
+           data-id = ID exato da API do CoinGecko
+           Ao clicar, main.js preenche o campo e dispara a busca    -->
+      <div class="chips">
+        <div class="chip" data-id="bitcoin">BTC</div>
+        <div class="chip" data-id="ethereum">ETH</div>
+        <div class="chip" data-id="solana">SOL</div>
+        <div class="chip" data-id="sui">SUI</div>
+        <div class="chip" data-id="chainlink">LINK</div>
+        <div class="chip" data-id="avalanche-2">AVAX</div>
+        <div class="chip" data-id="polkadot">DOT</div>
+        <div class="chip" data-id="arbitrum">ARB</div>
+        <div class="chip" data-id="render-token">RNDR</div>
+      </div>
+
+      <!-- Dica de uso -->
+      <p class="hero-hint">
+        Use o ID do CoinGecko:
+        <span class="hint-code">bitcoin</span>,
+        <span class="hint-code">ethereum</span>,
+        <span class="hint-code">avalanche-2</span>…
+        &nbsp;·&nbsp; Erro 429? Aguarde ~30s (limite da API gratuita)
+      </p>
+
+    </section>
+
+
+    <!-- Barra de status: preenchida pelo main.js após a busca
+         Exemplo: "📅 16/03/2025 | 🔗 CoinGecko | 🦙 DeFiLlama" -->
+    <div id="update-info"></div>
+
+
+    <!-- ═══════════════════════════════════════════════════
+         ÁREA DE RESULTADOS
+         Fica OCULTA (display:none) até o usuário pesquisar.
+         O main.js muda para display:block quando os dados chegam.
+         TODO o conteúdo aqui dentro será preenchido via JavaScript.
+         ═══════════════════════════════════════════════════ -->
+    <main class="main" id="cryptoData" style="display:none">
+
+      <!-- Conteúdo gerado pelo JavaScript após a busca:
+           • Token Bar (logo, nome, preço)
+           • Grid de Métricas (MC, FDV, Supply, TVL...)
+           • Gráficos (pizza + barras)
+           • Barra de Progresso do MarketCap
+           • Tabela de Contratos
+           • Formulário DYOR com 6 abas
+           • Pesquisas Salvas                              -->
+
+    </main>
+
+
+  </div><!-- /page-wrap -->
+
+
+  <!-- ═══════════════════════════════════════════════════
+       TOAST — notificação flutuante (canto inferior direito)
+       Exemplo: "✅ Bitcoin carregado!" ou "❌ Erro na API"
+       Controlado por main.js → função showToast()
+       ═══════════════════════════════════════════════════ -->
+  <div id="toast">
+    <span id="toastIcon">✓</span>
+    <span id="toastMsg">Mensagem</span>
+    <div class="toast-bar" id="toastBar"></div>  <!-- barra que esgota em 3s -->
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════
+       SCRIPTS JAVASCRIPT
+       IMPORTANTE: a ordem abaixo é obrigatória!
+       Cada arquivo depende do que veio antes.
+
+       1. config.js → define URLs e constantes (carrega PRIMEIRO)
+       2. api.js    → usa as URLs do config.js
+       3. charts.js → usa constantes do config.js
+       4. form.js   → lógica do formulário
+       5. main.js   → usa tudo acima (carrega POR ÚLTIMO)
+       ═══════════════════════════════════════════════════ -->
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/form.js"></script>
+  <script src="js/main.js"></script>
+
+</body>
+</html>
