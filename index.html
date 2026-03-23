@@ -841,20 +841,86 @@
       });
     }
 
-    /* ── FUNÇÃO: filtrar moedas pelo texto digitado ───────────────
-       Compara o texto com nome, símbolo e id da moeda.
-       .toLowerCase() → torna a busca case-insensitive
-       .includes()    → verdadeiro se o texto estiver em qualquer posição
-       .slice(0, 10)  → limita a 10 resultados no dropdown
+    /* ── FUNÇÃO: busca com pontuação de relevância ───────────────
+       Problema anterior: "ethereum" mostrava "Baby Ethereum" antes
+       do próprio Ethereum, e "sol" não encontrava Solana no topo.
+
+       Solução: cada moeda recebe uma PONTUAÇÃO (score).
+       Quanto maior o score, mais relevante — aparece primeiro.
+
+       TABELA DE PONTUAÇÃO:
+       ┌─────────────────────────────────────────┬───────┐
+       │ Critério                                │ Score │
+       ├─────────────────────────────────────────┼───────┤
+       │ Símbolo exato (SOL == SOL)              │  100  │
+       │ ID exato (solana == solana)             │   90  │
+       │ Nome exato (Solana == Solana)           │   80  │
+       │ Símbolo começa com (SOL em SOLX)        │   60  │
+       │ ID começa com (solana em solana-2)      │   50  │
+       │ Nome começa com (Solana em Solana...)   │   40  │
+       │ Símbolo contém (SOL em WSOL)            │   20  │
+       │ ID contém (sol em absolute)             │   10  │
+       │ Nome contém (sol em Absolute)           │    5  │
+       └─────────────────────────────────────────┴───────┘
+
+       DESEMPATE: quando dois resultados têm o mesmo score,
+       a moeda com menor ranking de mercado (r=1 é Bitcoin)
+       aparece primeiro. Moedas sem ranking ficam por último.
+
+       RESULTADO: digitar "sol" → Solana (#5) aparece primeiro.
+                  digitar "ethereum" → Ethereum (#2) aparece primeiro.
     */
     function search(query) {
       if (!query || query.length < 1) return [];
-      var q = query.toLowerCase();
-      return allCoins.filter(function (c) {
-        return c.name.toLowerCase().includes(q)
-            || c.symbol.toLowerCase().includes(q)
-            || c.id.toLowerCase().includes(q);
-      }).slice(0, 10);
+
+      var q    = query.toLowerCase();
+      var qUP  = query.toUpperCase();  /* para comparar com símbolo */
+
+      var scored = [];
+
+      for (var i = 0; i < allCoins.length; i++) {
+        var c      = allCoins[i];
+        var sym    = c.symbol;                    /* já em maiúsculas */
+        var name   = c.name.toLowerCase();
+        var id     = c.id.toLowerCase();
+        var score  = 0;
+
+        /* ── Correspondências exatas (maior prioridade) ───────── */
+        if (sym === qUP)   score = Math.max(score, 100);
+        if (id  === q)     score = Math.max(score, 90);
+        if (name === q)    score = Math.max(score, 80);
+
+        /* ── Começa com (segunda prioridade) ─────────────────── */
+        if (score === 0) {
+          if (sym.startsWith(qUP))  score = Math.max(score, 60);
+          if (id.startsWith(q))     score = Math.max(score, 50);
+          if (name.startsWith(q))   score = Math.max(score, 40);
+        }
+
+        /* ── Contém em qualquer posição (terceira prioridade) ─── */
+        if (score === 0) {
+          if (sym.includes(qUP))   score = Math.max(score, 20);
+          if (id.includes(q))      score = Math.max(score, 10);
+          if (name.includes(q))    score = Math.max(score, 5);
+        }
+
+        /* Só inclui na lista se teve alguma correspondência */
+        if (score > 0) {
+          scored.push({ coin: c, score: score });
+        }
+      }
+
+      /* Ordena por score (desc) e depois por ranking de mercado (asc).
+         r=null (sem ranking) vai para o final usando Infinity. */
+      scored.sort(function (a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        var ra = a.coin.r || Infinity;
+        var rb = b.coin.r || Infinity;
+        return ra - rb;
+      });
+
+      /* Retorna apenas os objetos de moeda, limitado a 10 resultados */
+      return scored.slice(0, 10).map(function (s) { return s.coin; });
     }
 
     /* ── FUNÇÃO: posicionar o dropdown na tela ───────────────────
