@@ -724,8 +724,8 @@
     ];
 
     /* ── VARIÁVEIS DE ESTADO ─────────────────────────────────────
-       allCoins   → lista completa carregada (API ou fallback)
-       activeIdx  → índice do item destacado ao navegar com teclado
+       allCoins  → lista completa (15.000+ moedas do /coins/list)
+       activeIdx → índice do item destacado ao navegar com teclado
     */
     var allCoins  = [];
     var activeIdx = -1;
@@ -752,81 +752,93 @@
       if (pct !== undefined) progEl.style.width = pct + '%';
     }
 
-    /* ── FUNÇÃO: buscar uma página da CoinGecko ──────────────────
-       A API retorna no máximo 250 moedas por chamada.
-       Fazemos até 4 chamadas (páginas 1 a 4) = top 1000 moedas.
+    /* ── FUNÇÃO: carregar TODAS as moedas da CoinGecko ───────────
+       ESTRATÉGIA EM DUAS ETAPAS:
 
-       AbortSignal.timeout(6000) → cancela automaticamente se
-       demorar mais de 6 segundos (evita o site travar).
-    */
-    function fetchPage(page) {
-      var url = 'https://api.coingecko.com/api/v3/coins/markets'
-        + '?vs_currency=usd'
-        + '&order=market_cap_desc'
-        + '&per_page=250'
-        + '&page=' + page
-        + '&sparkline=false';
-      return fetch(url, { signal: AbortSignal.timeout(6000) })
-        .then(function (res) {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        });
-    }
+       ETAPA 1 — /coins/list
+         Retorna TODAS as moedas cadastradas (15.000+), incluindo
+         moedas novas e sem ranking como "Hey Anon".
+         Campos: id, symbol, name (sem imagem e sem ranking).
 
-    /* ── FUNÇÃO: carregar todas as moedas ────────────────────────
-       Tenta buscar 4 páginas em sequência.
-       Cada página é independente: se a página 2 falhar por
-       rate limit (erro 429), as páginas 1 e 3 ainda são usadas.
-       Se a página 1 falhar, usa o FALLBACK offline.
+       ETAPA 2 — /coins/markets (top 250, em paralelo)
+         Retorna as 250 maiores com imagem e ranking.
+         Enriquecemos as moedas do /coins/list com esses dados:
+         quando o usuário pesquisa "bitcoin", ele aparece com foto.
+
+       Se a ETAPA 1 falhar → usa FALLBACK offline.
+       Se a ETAPA 2 falhar → busca funciona, mas sem imagens/rankings.
     */
     function loadCoins() {
       setStatus('Conectando à CoinGecko...', 'loading', 10);
 
-      fetchPage(1)
-        .then(function (p1) {
-          setStatus('Carregando...', 'loading', 35);
-          var combined = p1;
+      /* Disparamos as duas chamadas AO MESMO TEMPO com Promise.all.
+         Isso é mais rápido do que chamar uma após a outra:
+         ambas viajam pela internet em paralelo.
 
-          /* Tentamos as páginas 2, 3 e 4.
-             Cada .catch(function(){}) garante que um erro
-             em uma página não interrompa as outras. */
-          return fetchPage(2).catch(function () { return []; })
-            .then(function (p2) {
-              combined = combined.concat(p2);
-              setStatus('Carregando...', 'loading', 55);
-              return fetchPage(3).catch(function () { return []; });
-            })
-            .then(function (p3) {
-              combined = combined.concat(p3);
-              setStatus('Carregando...', 'loading', 75);
-              return fetchPage(4).catch(function () { return []; });
-            })
-            .then(function (p4) {
-              combined = combined.concat(p4);
+         Promise.allSettled → não cancela tudo se uma falhar.
+         Cada resultado tem { status: 'fulfilled'|'rejected', value }
+      */
+      var urlList    = 'https://api.coingecko.com/api/v3/coins/list';
+      var urlMarkets = 'https://api.coingecko.com/api/v3/coins/markets'
+                     + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false';
 
-              /* Mapeamos para o formato interno { id, symbol, name, image, r } */
-              allCoins = combined.map(function (c) {
-                return {
-                  id:     c.id,
-                  symbol: c.symbol.toUpperCase(),
-                  name:   c.name,
-                  image:  c.image,
-                  r:      c.market_cap_rank
-                };
-              });
+      Promise.allSettled([
+        fetch(urlList,    { signal: AbortSignal.timeout(12000) }).then(function(r){ return r.json(); }),
+        fetch(urlMarkets, { signal: AbortSignal.timeout(8000)  }).then(function(r){ return r.json(); })
+      ]).then(function (results) {
 
-              setStatus(allCoins.length + ' moedas prontas', 'online', 100);
+        var listResult    = results[0];  /* /coins/list */
+        var marketsResult = results[1];  /* /coins/markets */
 
-              /* Esconde a barra de progresso após 1.5s */
-              setTimeout(function () { progEl.style.width = '0%'; }, 1500);
+        /* ── Etapa 1: lista completa ─────────────────────────── */
+        if (listResult.status === 'fulfilled' && Array.isArray(listResult.value)) {
+
+          setStatus('Processando lista...', 'loading', 60);
+
+          /* Mapeamos o /coins/list para nosso formato interno.
+             Começamos sem imagem e sem ranking — serão adicionados
+             abaixo se o /coins/markets também tiver respondido. */
+          allCoins = listResult.value.map(function (c) {
+            return {
+              id:     c.id,
+              symbol: (c.symbol || '').toUpperCase(),
+              name:   c.name || c.id,
+              image:  null,
+              r:      null
+            };
+          });
+
+          /* ── Etapa 2: enriquecer com imagens e rankings ─────── */
+          if (marketsResult.status === 'fulfilled' && Array.isArray(marketsResult.value)) {
+
+            /* Criamos um mapa id→dados para lookup em O(1).
+               Muito mais rápido do que usar .find() dentro de um loop. */
+            var enrichMap = {};
+            marketsResult.value.forEach(function (m) {
+              enrichMap[m.id] = { image: m.image, r: m.market_cap_rank };
             });
-        })
-        .catch(function () {
-          /* API falhou na página 1 → modo offline com FALLBACK */
+
+            /* Percorremos apenas as top 250 do enrichMap (não os 15k)
+               e atualizamos os objetos correspondentes em allCoins. */
+            allCoins.forEach(function (c) {
+              if (enrichMap[c.id]) {
+                c.image = enrichMap[c.id].image;
+                c.r     = enrichMap[c.id].r;
+              }
+            });
+          }
+
+          setStatus(allCoins.length.toLocaleString('pt-BR') + ' moedas prontas', 'online', 100);
+
+        } else {
+          /* /coins/list falhou → modo offline com lista manual */
           allCoins = FALLBACK;
           setStatus('Offline · ' + FALLBACK.length + ' moedas disponíveis', 'offline', 100);
-          setTimeout(function () { progEl.style.width = '0%'; }, 1500);
-        });
+        }
+
+        /* Esconde a barra de progresso após 1.5s em qualquer caso */
+        setTimeout(function () { progEl.style.width = '0%'; }, 1500);
+      });
     }
 
     /* ── FUNÇÃO: filtrar moedas pelo texto digitado ───────────────
