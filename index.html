@@ -73,26 +73,24 @@
 
     /*
       #autocomplete-dropdown — a lista que aparece enquanto o
-      usuário digita. Fica escondida por padrão (display: none)
-      e aparece quando a classe .open é adicionada pelo JavaScript.
+      usuário digita. Fica FORA do .search-wrap no HTML para evitar
+      ser cortado pelo overflow: hidden que o style.css pode ter nele.
 
-      position: absolute → flutua sobre o conteúdo abaixo
-      top: calc(100% + 8px) → começa logo abaixo da barra de busca
-      left/right: 0 → mesma largura da barra de busca
-      z-index: 999 → fica na frente de tudo
+      position: fixed → posicionado em relação à janela do navegador.
+      O JavaScript calcula e aplica top/left/width dinamicamente,
+      usando a posição real da barra de busca na tela.
+      z-index: 9999 → fica na frente de absolutamente tudo.
     */
     #autocomplete-dropdown {
       display: none;
-      position: absolute;
-      top: calc(100% + 8px);
-      left: 0;
-      right: 0;
+      position: fixed;
       background: #12122a;
       border: 1.5px solid #3a2fa0;
       border-radius: 16px;
-      z-index: 999;
-      max-height: 300px;   /* limita a altura — se tiver muitos resultados, rola */
-      overflow-y: auto;    /* ativa rolagem vertical quando necessário */
+      z-index: 9999;
+      max-height: 300px;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     }
 
     /*
@@ -404,17 +402,19 @@
           <span class="arrow">→</span>
         </button>
 
-        <!--
-          Dropdown do autocomplete.
-          Começa oculto (display: none via CSS).
-          O JavaScript adiciona a classe .open para exibir
-          e remove .open para esconder.
-          O conteúdo (lista de moedas) é gerado 100% pelo JS.
-        -->
-        <div id="autocomplete-dropdown"></div>
-
       </div>
       <!-- FIM BARRA DE BUSCA -->
+
+      <!--
+        Dropdown do autocomplete — fica FORA do .search-wrap
+        propositalmente! O style.css provavelmente tem overflow:hidden
+        no .search-wrap, o que cortaria o dropdown se ele estivesse dentro.
+        Solução: o JS usa getBoundingClientRect() para medir a posição
+        exata da barra na tela e aplica position:fixed com top/left/width
+        calculados. Resultado: o dropdown aparece colado abaixo da barra,
+        independente de qualquer overflow do container pai.
+      -->
+      <div id="autocomplete-dropdown"></div>
 
 
       <!-- ══════════════════════════════════════════════════════
@@ -845,6 +845,26 @@
       }).slice(0, 10);
     }
 
+    /* ── FUNÇÃO: posicionar o dropdown na tela ───────────────────
+       Como o dropdown fica FORA do .search-wrap, precisamos
+       calcular manualmente onde ele deve aparecer.
+
+       getBoundingClientRect() → retorna a posição e tamanho
+       de um elemento em relação à janela visível do navegador.
+
+       Usamos position: fixed (relativo à janela) porque o hero
+       pode ter transforms ou overflow que quebrariam o absolute.
+
+       Resultado: o dropdown sempre aparece colado abaixo da barra,
+       com a mesma largura, independente do scroll ou zoom.
+    */
+    function positionDropdown() {
+      var rect = inputEl.closest('.search-wrap').getBoundingClientRect();
+      dropdownEl.style.top    = (rect.bottom + 8) + 'px';
+      dropdownEl.style.left   = rect.left + 'px';
+      dropdownEl.style.width  = rect.width + 'px';
+    }
+
     /* ── FUNÇÃO: renderizar os itens no dropdown ──────────────────
        Gera o HTML de cada item da lista e injeta no dropdown.
        Adiciona eventos de clique em cada item gerado.
@@ -858,6 +878,9 @@
         dropdownEl.classList.remove('open');
         return;
       }
+
+      /* Posiciona o dropdown antes de exibir */
+      positionDropdown();
 
       /* Se não achou nada, mostra mensagem amigável */
       if (!results.length) {
@@ -978,7 +1001,18 @@
        Chama loadCoins() assim que a página terminar de carregar.
        Isso já inicia a busca das moedas em background enquanto
        o usuário lê a página.
+
+       O listener de resize/scroll reposiciona o dropdown caso
+       o usuário redimensione a janela ou role a página enquanto
+       ele estiver aberto.
     */
+    window.addEventListener('resize', function () {
+      if (dropdownEl.classList.contains('open')) positionDropdown();
+    });
+    window.addEventListener('scroll', function () {
+      if (dropdownEl.classList.contains('open')) positionDropdown();
+    }, true);
+
     loadCoins();
 
   })(); /* O () no final executa a função imediatamente (IIFE).
