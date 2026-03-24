@@ -467,7 +467,7 @@
         <span class="ac-status-text" id="ac-status-text">Carregando moedas...</span>
       </div>
 
-   
+      
     </section>
     <!-- FIM HERO -->
 
@@ -888,6 +888,19 @@
           if (sym.includes(qUP))   score = Math.max(score, 20);
           if (id.includes(q))      score = Math.max(score, 10);
           if (name.includes(q))    score = Math.max(score, 5);
+        }
+
+        /* ── Bônus de ranking de mercado ─────────────────────────
+           Coins com # recebem pontos extras para subir na lista.
+           Quanto menor o ranking (mais famosa a moeda), maior o bônus.
+           Isso garante que ETH, BTC, SOL apareçam na frente de tokens
+           obscuros que possam ter match igual ou maior no texto.
+        */
+        if (score > 0 && c.r) {
+          if      (c.r <= 20)  score += 50;
+          else if (c.r <= 100) score += 35;
+          else if (c.r <= 500) score += 20;
+          else                 score += 10;
         }
 
         /* Só inclui na lista se teve alguma correspondência */
