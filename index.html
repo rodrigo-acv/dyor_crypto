@@ -4,28 +4,255 @@
 ║  DYOR — Crypto Research Dashboard                            ║
 ║  Arquivo : index.html                                        ║
 ║  Escopo  : SOMENTE a página inicial (antes da pesquisa)      ║
+║  Versão  : 2.0 — Busca com autocomplete (combobox)           ║
 ╚══════════════════════════════════════════════════════════════╝
+
+  ESTRUTURA GERAL DO ARQUIVO
+  ──────────────────────────
+  1. <head>          → Configurações invisíveis (fontes, CSS)
+  2. <header>        → Topo fixo com logo + status das APIs
+  3. <section.hero>  → Área central com busca e chips
+  4. <section.features> → Cards explicando o que o site faz
+  5. <footer>        → Rodapé com aviso e créditos
+  6. <script>s       → Lógica JavaScript (final do body)
+
+  POR QUE OS SCRIPTS FICAM NO FINAL?
+  ────────────────────────────────────
+  O navegador lê o HTML de cima para baixo.
+  Se o script viesse antes do HTML, ele não encontraria
+  os elementos (input, botões, etc.) ainda na página.
+  Colocar no final garante que tudo já existe quando o JS rodar.
 -->
 <html lang="pt-BR">
 <head>
+  <!-- ════════════════════════════════════════════════════
+       META TAGS — informações para o navegador
+       charset="UTF-8"   → aceita acentos e emojis
+       viewport          → ajusta o layout para celulares
+       ════════════════════════════════════════════════════ -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DYOR — Crypto Research Dashboard</title>
 
-  <!-- Fontes externas do Google Fonts
-       Outfit        : fonte principal (títulos, textos)
-       JetBrains Mono: fonte para preços e códigos       -->
+  <!-- ════════════════════════════════════════════════════
+       FONTES DO GOOGLE FONTS
+       Carregamos duas fontes externas:
+       • Outfit        → usada em títulos e textos gerais
+       • JetBrains Mono → usada em preços e códigos (ex: "bitcoin")
+       O "preconnect" abre a conexão com o servidor do Google
+       antes de pedir a fonte, tornando o carregamento mais rápido.
+       ════════════════════════════════════════════════════ -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Todo o visual do site -->
+  <!-- ════════════════════════════════════════════════════
+       CSS PRINCIPAL — todo o visual do site
+       O arquivo css/style.css contém cores, tamanhos,
+       animações, layout, responsividade, etc.
+       ════════════════════════════════════════════════════ -->
   <link rel="stylesheet" href="css/style.css">
+
+  <!-- ════════════════════════════════════════════════════
+       CSS DO AUTOCOMPLETE — estilos APENAS do dropdown
+       Separamos aqui para não misturar com o style.css
+       e facilitar a manutenção. Tudo relacionado ao
+       comportamento visual do combobox de busca fica neste bloco.
+       ════════════════════════════════════════════════════ -->
+  <style>
+
+    /*
+      .search-wrap é o container da barra de busca.
+      Precisamos de position: relative aqui para que o dropdown
+      (position: absolute) se posicione ABAIXO da barra,
+      e não em outro lugar da página.
+    */
+    .search-wrap {
+      position: relative;
+    }
+
+    /*
+      #autocomplete-dropdown — a lista que aparece enquanto o
+      usuário digita. Fica FORA do .search-wrap no HTML para evitar
+      ser cortado pelo overflow: hidden que o style.css pode ter nele.
+
+      position: fixed → posicionado em relação à janela do navegador.
+      O JavaScript calcula e aplica top/left/width dinamicamente,
+      usando a posição real da barra de busca na tela.
+      z-index: 9999 → fica na frente de absolutamente tudo.
+    */
+    #autocomplete-dropdown {
+      display: none;
+      position: fixed;
+      background: #12122a;
+      border: 1.5px solid #3a2fa0;
+      border-radius: 16px;
+      z-index: 9999;
+      max-height: 300px;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    /*
+      .open é adicionada pelo JS quando há resultados.
+      display: block faz o dropdown aparecer na tela.
+    */
+    #autocomplete-dropdown.open {
+      display: block;
+    }
+
+    /*
+      Cada linha dentro do dropdown é um .ac-item.
+      display: flex → coloca ícone, nome e ranking lado a lado.
+      gap: 12px → espaço entre os elementos internos.
+    */
+    .ac-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 18px;
+      cursor: pointer;           /* muda o cursor para mãozinha */
+      transition: background 0.1s;
+    }
+
+    /* Destaca o item ao passar o mouse ou navegar com teclado */
+    .ac-item:hover,
+    .ac-item.active {
+      background: #1e1e40;
+    }
+
+    /*
+      Ícone da moeda (imagem circular).
+      Se a imagem não carregar, o JS substitui por .ac-ph.
+    */
+    .ac-img {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;   /* não deixa o ícone encolher */
+    }
+
+    /*
+      Placeholder do ícone: círculo roxo com as iniciais da moeda.
+      Aparece quando a imagem não carrega ou na lista offline.
+    */
+    .ac-ph {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #2a2a55;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #8888cc;
+      font-weight: 600;
+      flex-shrink: 0;
+      text-transform: uppercase;
+    }
+
+    /* Nome completo da moeda (ex: "Bitcoin") */
+    .ac-name {
+      color: #d0d0f0;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    /* Símbolo da moeda (ex: "BTC") — mais apagado */
+    .ac-symbol {
+      color: #6060a0;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    /*
+      Ranking de mercado (#1, #2…).
+      margin-left: auto → empurra para o lado direito da linha.
+    */
+    .ac-rank {
+      margin-left: auto;
+      font-size: 11px;
+      color: #4a4a7a;
+    }
+
+    /* Mensagem "Nenhuma moeda encontrada" */
+    .ac-empty {
+      color: #5050a0;
+      font-size: 13px;
+      text-align: center;
+      padding: 16px;
+    }
+
+    /*
+      Barra de status do autocomplete — fica logo abaixo dos chips.
+      Mostra: "Carregando...", "1000 moedas prontas" ou "Modo offline".
+      Usamos flexbox para alinhar o ponto colorido e o texto.
+    */
+    .ac-status {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;  /* alinha à direita */
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    /*
+      Ponto colorido de status (parecido com os do header).
+      As classes .loading, .online e .offline mudam a cor.
+    */
+    .ac-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .ac-dot.loading { background: #3a3a80; animation: ac-pulse 1s infinite; }
+    .ac-dot.online  { background: #6c5ce7; }
+    .ac-dot.offline { background: #a0802a; }
+
+    /* Animação de pulso no ponto quando está carregando */
+    @keyframes ac-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* Texto da mensagem de status (pequeno, discreto) */
+    .ac-status-text {
+      font-size: 11px;
+      color: #3a3a70;
+    }
+
+    /*
+      Barra de progresso fina abaixo dos chips.
+      Fica invisível (largura 0) até o JS iniciar o carregamento.
+    */
+    .ac-progress {
+      height: 2px;
+      background: #1a1a3a;
+      border-radius: 2px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    /* A parte colorida que vai crescendo de 0% a 100% */
+    .ac-progress-fill {
+      height: 100%;
+      background: #6c5ce7;
+      width: 0%;
+      transition: width 0.4s ease;   /* animação suave */
+    }
+
+  </style>
 </head>
 
 <body>
 
-  <!-- .page-wrap envolve tudo para o z-index funcionar corretamente -->
+  <!--
+    .page-wrap — div que envolve toda a página.
+    Serve para controlar o z-index globalmente e
+    aplicar estilos de layout que afetam tudo de uma vez.
+  -->
   <div class="page-wrap">
 
 
@@ -33,10 +260,15 @@
          ║  HEADER                                      ║
          ║  Fixo no topo — sempre visível ao rolar      ║
          ║  Logo | Status APIs | Botão imprimir         ║
-         ╚══════════════════════════════════════════════╝ -->
+         ╚══════════════════════════════════════════════╝
+
+         O CSS em style.css define:
+           position: fixed → gruda no topo da tela
+           backdrop-filter → efeito de vidro fosco
+    -->
     <header>
 
-      <!-- Logo clicável que leva ao topo -->
+      <!-- Logo clicável — href="#" leva ao topo da página -->
       <a class="logo" href="#">
         <div class="logo-badge">🔍</div>
         <div>
@@ -45,8 +277,16 @@
         </div>
       </a>
 
-      <!-- Pílulas de status: mostram quais APIs estão conectadas
-           O ponto pisca para indicar conexão ativa               -->
+      <!--
+        Pílulas de status das APIs.
+        São visuais apenas — não verificam a conexão em tempo real.
+        Para tornar dinâmico, o api.js pode adicionar/remover classes
+        baseado nas respostas das requisições.
+
+        dot-green  → CoinGecko (dados de mercado)
+        dot-violet → DeFiLlama (dados de TVL/DeFi)
+        dot-amber  → Mock Data (dados simulados quando API falha)
+      -->
       <div class="header-pills">
         <div class="api-pill">
           <div class="api-pill-dot dot-green"></div>
@@ -62,7 +302,7 @@
         </div>
       </div>
 
-      <!-- Botão imprimir: usa função nativa do navegador -->
+      <!-- window.print() abre o diálogo de impressão do navegador -->
       <button class="btn-print" onclick="window.print()">⎙ Imprimir</button>
 
     </header>
@@ -71,60 +311,130 @@
 
     <!-- ╔══════════════════════════════════════════════╗
          ║  HERO                                        ║
-         ║  Área central da página inicial              ║
+         ║  Área central — o coração da página inicial  ║
          ║  Badge | Título | Subtítulo | Busca | Chips  ║
          ╚══════════════════════════════════════════════╝ -->
     <section class="hero">
 
-      <!-- Bolinhas decorativas animadas no fundo do hero -->
+      <!--
+        Bolinhas decorativas de fundo (orbs).
+        São divs com border-radius: 50% (círculo) e
+        filter: blur() para criar o efeito de brilho difuso.
+        A animação é definida no style.css.
+        NÃO contêm conteúdo — são puramente decorativas.
+      -->
       <div class="hero-orbs">
         <div class="orb orb-1"></div>
         <div class="orb orb-2"></div>
         <div class="orb orb-3"></div>
       </div>
 
-      <!-- Linha de grid decorativa (efeito visual apenas) -->
+      <!-- Grade decorativa de fundo (linhas finas) — só visual -->
       <div class="hero-grid-overlay"></div>
 
-      <!-- Badge pequeno acima do título -->
+      <!--
+        Badge "Do Your Own Research" — pequena etiqueta acima do título.
+        .hero-tag-dot → o ponto animado verde/roxo que pisca.
+      -->
       <div class="hero-tag">
         <span class="hero-tag-dot"></span>
         Do Your Own Research
       </div>
 
-      <!-- Título principal da página
-           .grad aplica o gradiente colorido em "criptomoeda" -->
+      <!--
+        Título principal da página.
+        .grad → classe que aplica o gradiente colorido no texto.
+        O gradiente é definido em style.css com background-clip: text.
+      -->
       <h1 class="hero-h1">
         Pesquise qualquer<br>
         <span class="grad">criptomoeda</span>
       </h1>
 
-      <!-- Descrição do que o site faz -->
+      <!-- Subtítulo explicando o propósito da ferramenta -->
       <p class="hero-sub">
         Métricas em tempo real + formulário de análise completo
         para tomar decisões informadas.
       </p>
 
-      <!-- BARRA DE BUSCA
-           id="cryptoInput" : o JS vai ler o valor digitado aqui
-           id="btnSearch"   : o JS vai adicionar o evento de clique -->
+
+      <!-- ══════════════════════════════════════════════════════
+           BARRA DE BUSCA COM AUTOCOMPLETE (COMBOBOX)
+           ══════════════════════════════════════════════════════
+
+           COMO FUNCIONA:
+           1. O usuário começa a digitar no campo #cryptoInput
+           2. O JavaScript (no <script> lá embaixo) filtra a lista
+              de moedas que foi carregada da API CoinGecko
+           3. Os resultados aparecem no #autocomplete-dropdown
+           4. Ao clicar em uma moeda (ou pressionar Enter),
+              o campo é preenchido e o main.js dispara a análise
+
+           IDs IMPORTANTES — não renomeie!
+           • id="cryptoInput" → o main.js lê o valor daqui
+           • id="btnSearch"   → o main.js escuta o clique aqui
+           • id="autocomplete-dropdown" → o JS do autocomplete usa esse id
+      -->
       <div class="search-wrap">
+
+        <!-- Ícone de lupa (apenas visual, não é clicável) -->
         <div class="search-icon">🔎</div>
+
+        <!--
+          Campo de texto principal.
+          autocomplete="off" → desativa as sugestões do navegador
+          (usamos nossa própria lista, não a do browser)
+        -->
         <input
           type="text"
           id="cryptoInput"
           placeholder="Ex: bitcoin, ethereum, solana, sui..."
           autocomplete="off"
         >
+
+        <!--
+          Botão "Analisar" — dispara a pesquisa.
+          O main.js adiciona um addEventListener('click') aqui.
+          Ao clicar, ele lê o valor de #cryptoInput e inicia a análise.
+        -->
         <button class="search-btn" id="btnSearch">
           <span>Analisar</span>
           <span class="arrow">→</span>
         </button>
-      </div>
 
-      <!-- CHIPS RÁPIDOS
-           data-id = ID exato da moeda na API do CoinGecko
-           Ao clicar, o main.js preenche o campo e dispara a busca -->
+      </div>
+      <!-- FIM BARRA DE BUSCA -->
+
+      <!--
+        Dropdown do autocomplete — fica FORA do .search-wrap
+        propositalmente! O style.css provavelmente tem overflow:hidden
+        no .search-wrap, o que cortaria o dropdown se ele estivesse dentro.
+        Solução: o JS usa getBoundingClientRect() para medir a posição
+        exata da barra na tela e aplica position:fixed com top/left/width
+        calculados. Resultado: o dropdown aparece colado abaixo da barra,
+        independente de qualquer overflow do container pai.
+      -->
+      <div id="autocomplete-dropdown"></div>
+
+
+      <!-- ══════════════════════════════════════════════════════
+           CHIPS DE ATALHO RÁPIDO
+           ══════════════════════════════════════════════════════
+
+           Cada chip tem um data-id com o ID exato da moeda
+           na API do CoinGecko. Quando o usuário clica:
+             1. O main.js lê o data-id (ex: "bitcoin")
+             2. Preenche o campo #cryptoInput com esse valor
+             3. Dispara automaticamente a análise
+
+           Para adicionar um novo chip:
+           <div class="chip" data-id="ID-DA-COINGECKO">SÍMBOLO</div>
+
+           Para descobrir o ID correto, acesse:
+           https://www.coingecko.com e veja a URL da moeda.
+           Ex: https://www.coingecko.com/en/coins/bitcoin → id = "bitcoin"
+                https://www.coingecko.com/en/coins/avalanche → id = "avalanche-2"
+      -->
       <div class="chips">
         <div class="chip" data-id="bitcoin">BTC</div>
         <div class="chip" data-id="ethereum">ETH</div>
@@ -136,8 +446,33 @@
         <div class="chip" data-id="arbitrum">ARB</div>
         <div class="chip" data-id="render-token">RNDR</div>
       </div>
+      <!-- FIM CHIPS -->
 
-      <!-- Dica de uso para o usuário -->
+
+      <!--
+        Barra de progresso e status do carregamento do autocomplete.
+        Aparecem discretamente abaixo dos chips.
+
+        .ac-progress      → trilho cinza da barra (container)
+        #ac-prog-fill     → barra roxa que cresce de 0% a 100%
+        .ac-status        → linha com ponto colorido + texto
+        #ac-dot           → ponto que muda de cor (loading/online/offline)
+        #ac-status-text   → mensagem legível para o usuário
+      -->
+      <div class="ac-progress">
+        <div class="ac-progress-fill" id="ac-prog-fill"></div>
+      </div>
+      <div class="ac-status">
+        <div class="ac-dot loading" id="ac-dot"></div>
+        <span class="ac-status-text" id="ac-status-text">Carregando moedas...</span>
+      </div>
+
+
+      <!--
+        Dica de uso exibida abaixo de tudo.
+        Informa o usuário sobre a nomenclatura da CoinGecko
+        e sobre o erro 429 (rate limit da API gratuita).
+      -->
       <p class="hero-hint">
         Use o ID do CoinGecko:
         <span class="hint-code">bitcoin</span>,
@@ -153,8 +488,13 @@
 
     <!-- ╔══════════════════════════════════════════════╗
          ║  FEATURES — Cards de destaque               ║
-         ║  Mostra o que o site oferece                 ║
-         ╚══════════════════════════════════════════════╝ -->
+         ║  Exibe o que o site oferece ao usuário       ║
+         ╚══════════════════════════════════════════════╝
+
+         .features-grid → grade CSS com os 6 cards.
+         O layout (colunas, espaçamento) está em style.css.
+         feat-card--highlight → card com destaque visual especial.
+    -->
     <section class="features">
 
       <div class="features-label">O que você vai analisar</div>
@@ -167,6 +507,7 @@
           <div class="feat-desc">MarketCap, FDV, MC/FDV, TVL, Volume 24h, Supply circulante e muito mais via CoinGecko e DeFiLlama.</div>
         </div>
 
+        <!-- Este card tem destaque visual — borda ou fundo diferente via CSS -->
         <div class="feat-card feat-card--highlight">
           <div class="feat-icon">📋</div>
           <div class="feat-title">Formulário DYOR Completo</div>
@@ -205,22 +546,30 @@
 
     <!-- ╔══════════════════════════════════════════════╗
          ║  FOOTER                                      ║
+         ║  Rodapé com logo, aviso legal e créditos     ║
          ╚══════════════════════════════════════════════╝ -->
     <footer class="footer">
       <div class="footer-inner">
+
+        <!-- Logo menor repetido no rodapé -->
         <div class="footer-logo">
           <div class="logo-badge small">🔍</div>
           <span class="logo-text">DYOR</span>
         </div>
+
+        <!-- Aviso obrigatório: a ferramenta não é aconselhamento financeiro -->
         <p class="footer-disclaimer">
           ⚠️ Este site é apenas uma ferramenta de pesquisa. Nada aqui constitui aconselhamento financeiro.
           <strong>Invista com responsabilidade.</strong>
         </p>
+
+        <!-- Créditos das APIs usadas, com links para os sites oficiais -->
         <div class="footer-apis">
           Dados via
           <a href="https://www.coingecko.com" target="_blank">CoinGecko</a> &amp;
           <a href="https://defillama.com" target="_blank">DeFiLlama</a>
         </div>
+
       </div>
     </footer>
     <!-- FIM FOOTER -->
@@ -230,10 +579,24 @@
   <!-- FIM .page-wrap -->
 
 
-  <!-- ══════════════════════════════════════════════
-       SCRIPTS — carregados no final do <body>
-       A ORDEM importa! Cada arquivo depende do anterior.
-       ══════════════════════════════════════════════ -->
+  <!-- ══════════════════════════════════════════════════════════════
+       SCRIPTS — carregados no FINAL do <body>
+       ══════════════════════════════════════════════════════════════
+
+       A ORDEM IMPORTA — cada arquivo depende do anterior:
+
+       1. config.js   → define variáveis globais (URLs, chaves)
+       2. api.js      → funções para buscar dados nas APIs externas
+       3. charts.js   → cria e atualiza os gráficos (usa ApexCharts)
+       4. form.js     → lógica do formulário DYOR (abas, pontuação)
+       5. autocomplete.js → novo! combobox de busca (este arquivo)
+       6. main.js     → orquestra tudo: conecta busca → API → tela
+
+       Por que separar o autocomplete?
+       Para não misturar responsabilidades dentro do main.js e
+       facilitar a manutenção: se precisar ajustar a busca,
+       você sabe exatamente onde olhar.
+  -->
 
   <!-- 1. Configurações globais (URLs das APIs, constantes) -->
   <script src="js/config.js"></script>
@@ -247,7 +610,497 @@
   <!-- 4. Lógica do formulário DYOR -->
   <script src="js/form.js"></script>
 
-  <!-- 5. Controlador principal — orquestra tudo -->
+  <!-- ════════════════════════════════════════════════════════════
+       5. AUTOCOMPLETE — Combobox de busca inteligente
+       ════════════════════════════════════════════════════════════
+
+       Este bloco cuida de TODA a lógica do dropdown de sugestões.
+       Ele é auto-contido: não depende de nenhuma variável do main.js.
+       O main.js continua funcionando normalmente — ele lê o valor
+       de #cryptoInput e escuta o #btnSearch, exatamente como antes.
+
+       FLUXO COMPLETO:
+       ──────────────
+       A) Ao carregar a página:
+          → Tenta buscar as top 1000 moedas da CoinGecko (4 páginas)
+          → Se a API falhar ou demorar: usa a lista FALLBACK offline
+          → Atualiza a barra de status e de progresso
+
+       B) Ao digitar no campo:
+          → Filtra a lista pelo nome, símbolo ou ID da moeda
+          → Renderiza os resultados no dropdown
+          → Destaca o item selecionado pelo teclado (↑ ↓ Enter)
+
+       C) Ao selecionar uma moeda (mouse ou teclado):
+          → Preenche o #cryptoInput com o ID correto da CoinGecko
+          → Fecha o dropdown
+          → O main.js detecta o valor e pode disparar a busca
+  -->
+  <script>
+  (function () {
+    /*
+      ── LISTA DE FALLBACK (modo offline) ──────────────────────────
+      Usada quando a API do CoinGecko não responde.
+      Cobre as moedas mais populares + projetos como
+      Ethena (ENA), Virtuals Protocol (VIRTUAL), AI memecoins, etc.
+
+      Cada objeto tem:
+        id     → ID exato da CoinGecko (usado na URL da análise)
+        symbol → símbolo da moeda (BTC, ETH...)
+        name   → nome completo (Bitcoin, Ethereum...)
+        r      → ranking de market cap
+    */
+    var FALLBACK = [
+      { id: 'bitcoin',                         symbol: 'BTC',      name: 'Bitcoin',               r: 1   },
+      { id: 'ethereum',                         symbol: 'ETH',      name: 'Ethereum',              r: 2   },
+      { id: 'tether',                           symbol: 'USDT',     name: 'Tether',                r: 3   },
+      { id: 'binancecoin',                      symbol: 'BNB',      name: 'BNB',                   r: 4   },
+      { id: 'solana',                           symbol: 'SOL',      name: 'Solana',                r: 5   },
+      { id: 'ripple',                           symbol: 'XRP',      name: 'XRP',                   r: 6   },
+      { id: 'usd-coin',                         symbol: 'USDC',     name: 'USDC',                  r: 7   },
+      { id: 'dogecoin',                         symbol: 'DOGE',     name: 'Dogecoin',              r: 8   },
+      { id: 'cardano',                          symbol: 'ADA',      name: 'Cardano',               r: 9   },
+      { id: 'tron',                             symbol: 'TRX',      name: 'TRON',                  r: 10  },
+      { id: 'avalanche-2',                      symbol: 'AVAX',     name: 'Avalanche',             r: 11  },
+      { id: 'shiba-inu',                        symbol: 'SHIB',     name: 'Shiba Inu',             r: 12  },
+      { id: 'polkadot',                         symbol: 'DOT',      name: 'Polkadot',              r: 13  },
+      { id: 'chainlink',                        symbol: 'LINK',     name: 'Chainlink',             r: 14  },
+      { id: 'bitcoin-cash',                     symbol: 'BCH',      name: 'Bitcoin Cash',          r: 15  },
+      { id: 'litecoin',                         symbol: 'LTC',      name: 'Litecoin',              r: 16  },
+      { id: 'uniswap',                          symbol: 'UNI',      name: 'Uniswap',               r: 17  },
+      { id: 'near',                             symbol: 'NEAR',     name: 'NEAR Protocol',         r: 18  },
+      { id: 'stellar',                          symbol: 'XLM',      name: 'Stellar',               r: 19  },
+      { id: 'internet-computer',               symbol: 'ICP',      name: 'Internet Computer',     r: 20  },
+      { id: 'aptos',                            symbol: 'APT',      name: 'Aptos',                 r: 21  },
+      { id: 'hedera-hashgraph',                symbol: 'HBAR',     name: 'Hedera',                r: 22  },
+      { id: 'cosmos',                           symbol: 'ATOM',     name: 'Cosmos',                r: 24  },
+      { id: 'polygon',                          symbol: 'MATIC',    name: 'Polygon',               r: 25  },
+      { id: 'sui',                              symbol: 'SUI',      name: 'Sui',                   r: 26  },
+      { id: 'render-token',                    symbol: 'RNDR',     name: 'Render',                r: 27  },
+      { id: 'filecoin',                         symbol: 'FIL',      name: 'Filecoin',              r: 28  },
+      { id: 'arbitrum',                         symbol: 'ARB',      name: 'Arbitrum',              r: 29  },
+      { id: 'vechain',                          symbol: 'VET',      name: 'VeChain',               r: 30  },
+      { id: 'optimism',                         symbol: 'OP',       name: 'Optimism',              r: 31  },
+      { id: 'injective-protocol',              symbol: 'INJ',      name: 'Injective',             r: 32  },
+      { id: 'the-graph',                        symbol: 'GRT',      name: 'The Graph',             r: 33  },
+      { id: 'aave',                             symbol: 'AAVE',     name: 'Aave',                  r: 34  },
+      { id: 'stacks',                           symbol: 'STX',      name: 'Stacks',                r: 35  },
+      { id: 'immutable-x',                     symbol: 'IMX',      name: 'Immutable',             r: 36  },
+      { id: 'algorand',                         symbol: 'ALGO',     name: 'Algorand',              r: 37  },
+      { id: 'sei-network',                     symbol: 'SEI',      name: 'Sei',                   r: 38  },
+      { id: 'maker',                            symbol: 'MKR',      name: 'Maker',                 r: 39  },
+      { id: 'flow',                             symbol: 'FLOW',     name: 'Flow',                  r: 40  },
+      { id: 'mantle',                           symbol: 'MNT',      name: 'Mantle',                r: 41  },
+      { id: 'thorchain',                        symbol: 'RUNE',     name: 'THORChain',             r: 42  },
+      { id: 'curve-dao-token',                 symbol: 'CRV',      name: 'Curve DAO',             r: 43  },
+      { id: 'celestia',                         symbol: 'TIA',      name: 'Celestia',              r: 46  },
+      { id: 'kaspa',                            symbol: 'KAS',      name: 'Kaspa',                 r: 47  },
+      { id: 'jupiter-ag',                      symbol: 'JUP',      name: 'Jupiter',               r: 49  },
+      { id: 'pendle',                           symbol: 'PENDLE',   name: 'Pendle',                r: 50  },
+      { id: 'wormhole',                         symbol: 'W',        name: 'Wormhole',              r: 51  },
+      { id: 'ethena',                           symbol: 'ENA',      name: 'Ethena',                r: 52  },
+      { id: 'fetch-ai',                         symbol: 'FET',      name: 'Fetch.ai',              r: 55  },
+      { id: 'worldcoin-wld',                   symbol: 'WLD',      name: 'Worldcoin',             r: 56  },
+      { id: 'floki',                            symbol: 'FLOKI',    name: 'FLOKI',                 r: 57  },
+      { id: 'bonk',                             symbol: 'BONK',     name: 'Bonk',                  r: 58  },
+      { id: 'pepe',                             symbol: 'PEPE',     name: 'Pepe',                  r: 59  },
+      { id: 'jito-governance-token',           symbol: 'JTO',      name: 'Jito',                  r: 60  },
+      { id: 'notcoin',                          symbol: 'NOT',      name: 'Notcoin',               r: 61  },
+      { id: 'dogwifcoin',                       symbol: 'WIF',      name: 'dogwifhat',             r: 62  },
+      { id: 'pyth-network',                    symbol: 'PYTH',     name: 'Pyth Network',          r: 65  },
+      { id: 'virtuals-protocol',               symbol: 'VIRTUAL',  name: 'Virtuals Protocol',     r: 95  },
+      { id: 'aixbt',                            symbol: 'AIXBT',    name: 'AIXBT by Virtuals',     r: 120 },
+      { id: 'goatseus-maximus',                symbol: 'GOAT',     name: 'Goatseus Maximus',      r: 160 },
+      { id: 'ai16z',                            symbol: 'AI16Z',    name: 'ai16z',                 r: 180 },
+      { id: 'arc',                              symbol: 'ARC',      name: 'AI Rig Complex',        r: 130 },
+      { id: 'fartcoin',                         symbol: 'FARTCOIN', name: 'Fartcoin',              r: 150 },
+      { id: 'brett-based',                     symbol: 'BRETT',    name: 'Brett',                 r: 130 },
+      { id: 'zk',                               symbol: 'ZK',       name: 'ZKsync',                r: 128 },
+      { id: 'blast',                            symbol: 'BLAST',    name: 'Blast',                 r: 122 },
+      { id: 'io',                               symbol: 'IO',       name: 'io.net',                r: 118 },
+      { id: 'bome',                             symbol: 'BOME',     name: 'Book of Meme',          r: 135 },
+      { id: 'neiro-first-neiro-on-ethereum',   symbol: 'NEIRO',    name: 'Neiro',                 r: 140 },
+      { id: 'luna-2',                           symbol: 'LUNA',     name: 'Terra',                 r: 200 },
+    ];
+
+    /* ── VARIÁVEIS DE ESTADO ─────────────────────────────────────
+       allCoins  → lista completa (15.000+ moedas do /coins/list)
+       activeIdx → índice do item destacado ao navegar com teclado
+    */
+    var allCoins  = [];
+    var activeIdx = -1;
+
+    /* ── REFERÊNCIAS AOS ELEMENTOS HTML ─────────────────────────
+       Pegamos os elementos pelo id uma única vez e guardamos
+       em variáveis. É mais eficiente do que chamar
+       document.getElementById() toda vez que precisar.
+    */
+    var inputEl    = document.getElementById('cryptoInput');
+    var dropdownEl = document.getElementById('autocomplete-dropdown');
+    var dotEl      = document.getElementById('ac-dot');
+    var statusEl   = document.getElementById('ac-status-text');
+    var progEl     = document.getElementById('ac-prog-fill');
+
+    /* ── FUNÇÃO: atualizar barra de status ───────────────────────
+       msg   → texto que aparece ao lado do ponto
+       state → 'loading' | 'online' | 'offline' (muda a cor do ponto)
+       pct   → porcentagem da barra de progresso (0 a 100)
+    */
+    function setStatus(msg, state, pct) {
+      statusEl.textContent = msg;
+      dotEl.className = 'ac-dot ' + (state || '');
+      if (pct !== undefined) progEl.style.width = pct + '%';
+    }
+
+    /* ── FUNÇÃO: carregar TODAS as moedas da CoinGecko ───────────
+       ESTRATÉGIA EM DUAS ETAPAS:
+
+       ETAPA 1 — /coins/list
+         Retorna TODAS as moedas cadastradas (15.000+), incluindo
+         moedas novas e sem ranking como "Hey Anon".
+         Campos: id, symbol, name (sem imagem e sem ranking).
+
+       ETAPA 2 — /coins/markets (top 250, em paralelo)
+         Retorna as 250 maiores com imagem e ranking.
+         Enriquecemos as moedas do /coins/list com esses dados:
+         quando o usuário pesquisa "bitcoin", ele aparece com foto.
+
+       Se a ETAPA 1 falhar → usa FALLBACK offline.
+       Se a ETAPA 2 falhar → busca funciona, mas sem imagens/rankings.
+    */
+    function loadCoins() {
+      setStatus('Conectando à CoinGecko...', 'loading', 10);
+
+      /* Disparamos as duas chamadas AO MESMO TEMPO com Promise.all.
+         Isso é mais rápido do que chamar uma após a outra:
+         ambas viajam pela internet em paralelo.
+
+         Promise.allSettled → não cancela tudo se uma falhar.
+         Cada resultado tem { status: 'fulfilled'|'rejected', value }
+      */
+      var urlList    = 'https://api.coingecko.com/api/v3/coins/list';
+      var urlMarkets = 'https://api.coingecko.com/api/v3/coins/markets'
+                     + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false';
+
+      Promise.allSettled([
+        fetch(urlList,    { signal: AbortSignal.timeout(12000) }).then(function(r){ return r.json(); }),
+        fetch(urlMarkets, { signal: AbortSignal.timeout(8000)  }).then(function(r){ return r.json(); })
+      ]).then(function (results) {
+
+        var listResult    = results[0];  /* /coins/list */
+        var marketsResult = results[1];  /* /coins/markets */
+
+        /* ── Etapa 1: lista completa ─────────────────────────── */
+        if (listResult.status === 'fulfilled' && Array.isArray(listResult.value)) {
+
+          setStatus('Processando lista...', 'loading', 60);
+
+          /* Mapeamos o /coins/list para nosso formato interno.
+             Começamos sem imagem e sem ranking — serão adicionados
+             abaixo se o /coins/markets também tiver respondido. */
+          allCoins = listResult.value.map(function (c) {
+            return {
+              id:     c.id,
+              symbol: (c.symbol || '').toUpperCase(),
+              name:   c.name || c.id,
+              image:  null,
+              r:      null
+            };
+          });
+
+          /* ── Etapa 2: enriquecer com imagens e rankings ─────── */
+          if (marketsResult.status === 'fulfilled' && Array.isArray(marketsResult.value)) {
+
+            /* Criamos um mapa id→dados para lookup em O(1).
+               Muito mais rápido do que usar .find() dentro de um loop. */
+            var enrichMap = {};
+            marketsResult.value.forEach(function (m) {
+              enrichMap[m.id] = { image: m.image, r: m.market_cap_rank };
+            });
+
+            /* Percorremos apenas as top 250 do enrichMap (não os 15k)
+               e atualizamos os objetos correspondentes em allCoins. */
+            allCoins.forEach(function (c) {
+              if (enrichMap[c.id]) {
+                c.image = enrichMap[c.id].image;
+                c.r     = enrichMap[c.id].r;
+              }
+            });
+          }
+
+          setStatus(allCoins.length.toLocaleString('pt-BR') + ' moedas prontas', 'online', 100);
+
+        } else {
+          /* /coins/list falhou → modo offline com lista manual */
+          allCoins = FALLBACK;
+          setStatus('Offline · ' + FALLBACK.length + ' moedas disponíveis', 'offline', 100);
+        }
+
+        /* Esconde a barra de progresso após 1.5s em qualquer caso */
+        setTimeout(function () { progEl.style.width = '0%'; }, 1500);
+      });
+    }
+
+    /* ── FUNÇÃO: busca com pontuação de relevância ───────────────
+       Problema anterior: "ethereum" mostrava "Baby Ethereum" antes
+       do próprio Ethereum, e "sol" não encontrava Solana no topo.
+
+       Solução: cada moeda recebe uma PONTUAÇÃO (score).
+       Quanto maior o score, mais relevante — aparece primeiro.
+
+       TABELA DE PONTUAÇÃO:
+       ┌─────────────────────────────────────────┬───────┐
+       │ Critério                                │ Score │
+       ├─────────────────────────────────────────┼───────┤
+       │ Símbolo exato (SOL == SOL)              │  100  │
+       │ ID exato (solana == solana)             │   90  │
+       │ Nome exato (Solana == Solana)           │   80  │
+       │ Símbolo começa com (SOL em SOLX)        │   60  │
+       │ ID começa com (solana em solana-2)      │   50  │
+       │ Nome começa com (Solana em Solana...)   │   40  │
+       │ Símbolo contém (SOL em WSOL)            │   20  │
+       │ ID contém (sol em absolute)             │   10  │
+       │ Nome contém (sol em Absolute)           │    5  │
+       └─────────────────────────────────────────┴───────┘
+
+       DESEMPATE: quando dois resultados têm o mesmo score,
+       a moeda com menor ranking de mercado (r=1 é Bitcoin)
+       aparece primeiro. Moedas sem ranking ficam por último.
+
+       RESULTADO: digitar "sol" → Solana (#5) aparece primeiro.
+                  digitar "ethereum" → Ethereum (#2) aparece primeiro.
+    */
+    function search(query) {
+      if (!query || query.length < 1) return [];
+
+      var q    = query.toLowerCase();
+      var qUP  = query.toUpperCase();  /* para comparar com símbolo */
+
+      var scored = [];
+
+      for (var i = 0; i < allCoins.length; i++) {
+        var c      = allCoins[i];
+        var sym    = c.symbol;                    /* já em maiúsculas */
+        var name   = c.name.toLowerCase();
+        var id     = c.id.toLowerCase();
+        var score  = 0;
+
+        /* ── Correspondências exatas (maior prioridade) ───────── */
+        if (sym === qUP)   score = Math.max(score, 100);
+        if (id  === q)     score = Math.max(score, 90);
+        if (name === q)    score = Math.max(score, 80);
+
+        /* ── Começa com (segunda prioridade) ─────────────────── */
+        if (score === 0) {
+          if (sym.startsWith(qUP))  score = Math.max(score, 60);
+          if (id.startsWith(q))     score = Math.max(score, 50);
+          if (name.startsWith(q))   score = Math.max(score, 40);
+        }
+
+        /* ── Contém em qualquer posição (terceira prioridade) ─── */
+        if (score === 0) {
+          if (sym.includes(qUP))   score = Math.max(score, 20);
+          if (id.includes(q))      score = Math.max(score, 10);
+          if (name.includes(q))    score = Math.max(score, 5);
+        }
+
+        /* Só inclui na lista se teve alguma correspondência */
+        if (score > 0) {
+          scored.push({ coin: c, score: score });
+        }
+      }
+
+      /* Ordena por score (desc) e depois por ranking de mercado (asc).
+         r=null (sem ranking) vai para o final usando Infinity. */
+      scored.sort(function (a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        var ra = a.coin.r || Infinity;
+        var rb = b.coin.r || Infinity;
+        return ra - rb;
+      });
+
+      /* Retorna apenas os objetos de moeda, limitado a 10 resultados */
+      return scored.slice(0, 10).map(function (s) { return s.coin; });
+    }
+
+    /* ── FUNÇÃO: posicionar o dropdown na tela ───────────────────
+       Como o dropdown fica FORA do .search-wrap, precisamos
+       calcular manualmente onde ele deve aparecer.
+
+       getBoundingClientRect() → retorna a posição e tamanho
+       de um elemento em relação à janela visível do navegador.
+
+       Usamos position: fixed (relativo à janela) porque o hero
+       pode ter transforms ou overflow que quebrariam o absolute.
+
+       Resultado: o dropdown sempre aparece colado abaixo da barra,
+       com a mesma largura, independente do scroll ou zoom.
+    */
+    function positionDropdown() {
+      var rect = inputEl.closest('.search-wrap').getBoundingClientRect();
+      dropdownEl.style.top    = (rect.bottom + 8) + 'px';
+      dropdownEl.style.left   = rect.left + 'px';
+      dropdownEl.style.width  = rect.width + 'px';
+    }
+
+    /* ── FUNÇÃO: renderizar os itens no dropdown ──────────────────
+       Gera o HTML de cada item da lista e injeta no dropdown.
+       Adiciona eventos de clique em cada item gerado.
+    */
+    function renderDropdown(results, query) {
+      activeIdx = -1; /* reseta navegação por teclado */
+
+      /* Se não tem texto digitado, esconde o dropdown */
+      if (!query) {
+        dropdownEl.innerHTML = '';
+        dropdownEl.classList.remove('open');
+        return;
+      }
+
+      /* Posiciona o dropdown antes de exibir */
+      positionDropdown();
+
+      /* Se não achou nada, mostra mensagem amigável */
+      if (!results.length) {
+        dropdownEl.innerHTML = '<div class="ac-empty">Nenhuma moeda encontrada para "' + query + '"</div>';
+        dropdownEl.classList.add('open');
+        return;
+      }
+
+      /* Gera o HTML de cada resultado.
+         Para cada moeda, cria um .ac-item com:
+           → ícone (imagem ou placeholder com iniciais)
+           → nome completo + símbolo
+           → ranking (#1, #2...) alinhado à direita
+      */
+      dropdownEl.innerHTML = results.map(function (c, i) {
+        var initials = c.symbol.substring(0, 3);
+
+        /*
+          onerror no <img>: se a imagem falhar ao carregar,
+          substitui o elemento <img> pelo placeholder .ac-ph
+        */
+        var icon = c.image
+          ? '<img class="ac-img" src="' + c.image + '" onerror="this.outerHTML=\'<div class=ac-ph>' + initials + '</div>\'" />'
+          : '<div class="ac-ph">' + initials + '</div>';
+
+        var rank = c.r ? '<span class="ac-rank">#' + c.r + '</span>' : '';
+
+        return '<div class="ac-item" data-i="' + i + '">'
+          + icon
+          + '<span>'
+          +   '<span class="ac-name">' + c.name + '</span>'
+          +   '<span class="ac-symbol">' + c.symbol + '</span>'
+          + '</span>'
+          + rank
+          + '</div>';
+      }).join('');
+
+      dropdownEl.classList.add('open');
+
+      /* Adiciona clique em cada item gerado */
+      dropdownEl.querySelectorAll('.ac-item').forEach(function (el, i) {
+        el.addEventListener('mousedown', function (e) {
+          e.preventDefault(); /* evita que o input perca o foco antes do clique */
+          selectCoin(results[i]);
+        });
+      });
+    }
+
+    /* ── FUNÇÃO: selecionar uma moeda ────────────────────────────
+       Preenche o campo com o ID da moeda (que é o que o main.js
+       usa para chamar a API do CoinGecko) e fecha o dropdown.
+    */
+    function selectCoin(coin) {
+      inputEl.value = coin.id;   /* IMPORTANTE: usa o id, não o name */
+      dropdownEl.innerHTML = '';
+      dropdownEl.classList.remove('open');
+    }
+
+    /* ── EVENTOS DO CAMPO DE TEXTO ────────────────────────────────
+
+       'input' → dispara a cada tecla digitada
+       Filtra a lista e atualiza o dropdown em tempo real.
+    */
+    inputEl.addEventListener('input', function () {
+      var q = inputEl.value.trim();
+      renderDropdown(search(q), q);
+    });
+
+    /*
+       'keydown' → navegação por teclado:
+         ↓ ArrowDown → desce na lista
+         ↑ ArrowUp   → sobe na lista
+         Enter       → seleciona o item destacado
+         Escape      → fecha o dropdown sem selecionar
+    */
+    inputEl.addEventListener('keydown', function (e) {
+      var items = dropdownEl.querySelectorAll('.ac-item');
+      if (!items.length) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIdx = Math.min(activeIdx + 1, items.length - 1);
+        items.forEach(function (el, i) { el.classList.toggle('active', i === activeIdx); });
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIdx = Math.max(activeIdx - 1, 0);
+        items.forEach(function (el, i) { el.classList.toggle('active', i === activeIdx); });
+      }
+      if (e.key === 'Enter' && activeIdx >= 0) {
+        var results = search(inputEl.value.trim());
+        if (results[activeIdx]) selectCoin(results[activeIdx]);
+      }
+      if (e.key === 'Escape') {
+        dropdownEl.classList.remove('open');
+      }
+    });
+
+    /*
+       'blur' → quando o input perde o foco (usuário clicou em outro lugar)
+       Fecha o dropdown com um pequeno delay (150ms) para
+       permitir que o evento 'mousedown' do item seja processado primeiro.
+    */
+    inputEl.addEventListener('blur', function () {
+      setTimeout(function () { dropdownEl.classList.remove('open'); }, 150);
+    });
+
+    /*
+       'focus' → quando o input recebe o foco novamente
+       Se já havia texto, reabre o dropdown.
+    */
+    inputEl.addEventListener('focus', function () {
+      var q = inputEl.value.trim();
+      if (q) renderDropdown(search(q), q);
+    });
+
+    /* ── INICIALIZAÇÃO ────────────────────────────────────────────
+       Chama loadCoins() assim que a página terminar de carregar.
+       Isso já inicia a busca das moedas em background enquanto
+       o usuário lê a página.
+
+       O listener de resize/scroll reposiciona o dropdown caso
+       o usuário redimensione a janela ou role a página enquanto
+       ele estiver aberto.
+    */
+    window.addEventListener('resize', function () {
+      if (dropdownEl.classList.contains('open')) positionDropdown();
+    });
+    window.addEventListener('scroll', function () {
+      if (dropdownEl.classList.contains('open')) positionDropdown();
+    }, true);
+
+    loadCoins();
+
+  })(); /* O () no final executa a função imediatamente (IIFE).
+           Isso evita que as variáveis internas "vazem" para o
+           escopo global e conflitem com o main.js ou outros scripts. */
+  </script>
+  <!-- FIM AUTOCOMPLETE -->
+
+  <!-- 6. Controlador principal — orquestra tudo.
+          Carregado POR ÚLTIMO porque depende de todos os anteriores. -->
   <script src="js/main.js"></script>
 
 </body>
