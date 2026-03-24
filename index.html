@@ -1,86 +1,83 @@
 <!DOCTYPE html>
 <!--
-╔══════════════════════════════════════════════════════════════╗
-║  DYOR — Crypto Research Dashboard                            ║
-║  Arquivo : index.html                                        ║
-║  Escopo  : SOMENTE a página inicial (antes da pesquisa)      ║
-║  Versão  : 2.0 — Busca com autocomplete (combobox)           ║
-╚══════════════════════════════════════════════════════════════╝
-
-  ESTRUTURA GERAL DO ARQUIVO
-  ──────────────────────────
-  1. <head>          → Configurações invisíveis (fontes, CSS)
-  2. <header>        → Topo fixo com logo + status das APIs
-  3. <section.hero>  → Área central com busca e chips
-  4. <section.features> → Cards explicando o que o site faz
-  5. <footer>        → Rodapé com aviso e créditos
-  6. <script>s       → Lógica JavaScript (final do body)
-
-  POR QUE OS SCRIPTS FICAM NO FINAL?
-  ────────────────────────────────────
-  O navegador lê o HTML de cima para baixo.
-  Se o script viesse antes do HTML, ele não encontraria
-  os elementos (input, botões, etc.) ainda na página.
-  Colocar no final garante que tudo já existe quando o JS rodar.
+╔══════════════════════════════════════════════════════════════════════╗
+║  DYOR — Crypto Research Dashboard                                    ║
+║  Arquivo : index.html                                                ║
+║  Versão  : 3.0 — Página única (Home + Resultado integrados)          ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  MUDANÇAS DESTA VERSÃO                                               ║
+║  ─────────────────────                                               ║
+║  • Home e Resultado agora vivem no MESMO arquivo HTML                ║
+║  • Ao clicar "Analisar", a home some e o resultado aparece           ║
+║  • O botão "← Nova Pesquisa" volta para a home                       ║
+║  • A busca real chama CoinGecko + DeFiLlama automaticamente          ║
+║  • Corrigido: tamanho do Market Cap dentro do gráfico circular       ║
+║                                                                      ║
+║  ARQUIVOS QUE VOCÊ PRECISA                                           ║
+║  ─────────────────────────                                           ║
+║  ✅  index.html      → ESTE arquivo (substituir o anterior)          ║
+║  ✅  css/style.css   → NÃO MUDA (continua igual)                     ║
+║  ⛔  js/main.js      → NÃO É MAIS USADO — pode deletar ou ignorar    ║
+║       (a linha <script src="js/main.js"> foi removida)               ║
+║  ✅  js/config.js    → Pode manter (não interfere)                   ║
+║  ✅  js/api.js       → Pode manter (não interfere)                   ║
+║  ✅  js/form.js      → Pode manter (formulário DYOR)                 ║
+║                                                                      ║
+║  COMO FUNCIONA O FLUXO                                               ║
+║  ─────────────────────                                               ║
+║  1. Usuário digita no campo e seleciona uma moeda                    ║
+║  2. Clica em "Analisar" (ou pressiona Enter)                         ║
+║  3. O JS esconde a home (#page-search)                               ║
+║  4. Mostra tela de carregamento com spinner                          ║
+║  5. Chama CoinGecko API para dados da moeda                          ║
+║  6. Chama DeFiLlama API para TVL (em paralelo)                       ║
+║  7. Monta o objeto de dados e chama renderResult()                   ║
+║  8. O resultado aparece com animação                                 ║
+║  9. Botão "← Nova Pesquisa" volta à home                             ║
+╚══════════════════════════════════════════════════════════════════════╝
 -->
 <html lang="pt-BR">
 <head>
-  <!-- ════════════════════════════════════════════════════
-       META TAGS — informações para o navegador
-       charset="UTF-8"   → aceita acentos e emojis
-       viewport          → ajusta o layout para celulares
-       ════════════════════════════════════════════════════ -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DYOR — Crypto Research Dashboard</title>
 
-  <!-- ════════════════════════════════════════════════════
-       FONTES DO GOOGLE FONTS
-       Carregamos duas fontes externas:
-       • Outfit        → usada em títulos e textos gerais
-       • JetBrains Mono → usada em preços e códigos (ex: "bitcoin")
-       O "preconnect" abre a conexão com o servidor do Google
-       antes de pedir a fonte, tornando o carregamento mais rápido.
-       ════════════════════════════════════════════════════ -->
+  <!-- Fontes: Outfit (textos gerais) + JetBrains Mono (preços e códigos) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- ════════════════════════════════════════════════════
-       CSS PRINCIPAL — todo o visual do site
-       O arquivo css/style.css contém cores, tamanhos,
-       animações, layout, responsividade, etc.
-       ════════════════════════════════════════════════════ -->
+  <!-- CSS da home page (header, hero, features, footer) — NÃO ALTERAR -->
   <link rel="stylesheet" href="css/style.css">
 
-  <!-- ════════════════════════════════════════════════════
-       CSS DO AUTOCOMPLETE — estilos APENAS do dropdown
-       Separamos aqui para não misturar com o style.css
-       e facilitar a manutenção. Tudo relacionado ao
-       comportamento visual do combobox de busca fica neste bloco.
-       ════════════════════════════════════════════════════ -->
   <style>
-
-    /*
-      .search-wrap é o container da barra de busca.
-      Precisamos de position: relative aqui para que o dropdown
-      (position: absolute) se posicione ABAIXO da barra,
-      e não em outro lugar da página.
-    */
-    .search-wrap {
-      position: relative;
+    /* ══════════════════════════════════════════════════════════════
+       TOKENS DE DESIGN — variáveis CSS compartilhadas entre home e
+       resultado. Se quiser mudar as cores do resultado, mexa aqui.
+       ══════════════════════════════════════════════════════════════ */
+    :root {
+      --res-bg:          #080818;
+      --res-bg-card:     #0d0d22;
+      --res-bg-card2:    #10102a;
+      --res-border:      rgba(108, 92, 231, 0.18);
+      --res-border-h:    rgba(108, 92, 231, 0.45);
+      --res-violet:      #6c5ce7;
+      --res-violet-soft: rgba(108, 92, 231, 0.12);
+      --res-violet-glow: rgba(108, 92, 231, 0.28);
+      --res-text:        #d0d0f0;
+      --res-text-muted:  #5a5a8a;
+      --res-text-dim:    #3a3a60;
     }
 
-    /*
-      #autocomplete-dropdown — a lista que aparece enquanto o
-      usuário digita. Fica FORA do .search-wrap no HTML para evitar
-      ser cortado pelo overflow: hidden que o style.css pode ter nele.
+    /* ══════════════════════════════════════════════════════════════
+       AUTOCOMPLETE DROPDOWN
+       O dropdown aparece enquanto o usuário digita na barra de busca.
+       position: fixed → posicionado em relação à janela do navegador.
+       z-index: 9999  → fica na frente de absolutamente tudo.
+       ══════════════════════════════════════════════════════════════ */
+    .search-wrap { position: relative; }
 
-      position: fixed → posicionado em relação à janela do navegador.
-      O JavaScript calcula e aplica top/left/width dinamicamente,
-      usando a posição real da barra de busca na tela.
-      z-index: 9999 → fica na frente de absolutamente tudo.
-    */
     #autocomplete-dropdown {
       display: none;
       position: fixed;
@@ -92,183 +89,582 @@
       overflow-y: auto;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     }
+    #autocomplete-dropdown.open { display: block; }
 
-    /*
-      .open é adicionada pelo JS quando há resultados.
-      display: block faz o dropdown aparecer na tela.
-    */
-    #autocomplete-dropdown.open {
-      display: block;
-    }
-
-    /*
-      Cada linha dentro do dropdown é um .ac-item.
-      display: flex → coloca ícone, nome e ranking lado a lado.
-      gap: 12px → espaço entre os elementos internos.
-    */
+    /* Cada linha de sugestão dentro do dropdown */
     .ac-item {
       display: flex;
       align-items: center;
       gap: 12px;
       padding: 10px 18px;
-      cursor: pointer;           /* muda o cursor para mãozinha */
+      cursor: pointer;
       transition: background 0.1s;
     }
+    .ac-item:hover, .ac-item.active { background: #1e1e40; }
 
-    /* Destaca o item ao passar o mouse ou navegar com teclado */
-    .ac-item:hover,
-    .ac-item.active {
-      background: #1e1e40;
-    }
+    /* Ícone circular da moeda — se falhar, cai no placeholder (.ac-ph) */
+    .ac-img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .ac-ph  { width: 28px; height: 28px; border-radius: 50%; background: #2a2a55; display: flex;
+               align-items: center; justify-content: center; font-size: 10px; color: #8888cc;
+               font-weight: 600; flex-shrink: 0; text-transform: uppercase; }
 
-    /*
-      Ícone da moeda (imagem circular).
-      Se a imagem não carregar, o JS substitui por .ac-ph.
-    */
-    .ac-img {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      object-fit: cover;
-      flex-shrink: 0;   /* não deixa o ícone encolher */
-    }
+    .ac-name   { color: #d0d0f0; font-size: 14px; font-weight: 500; }
+    .ac-symbol { color: #6060a0; font-size: 12px; margin-left: 4px; }
+    .ac-rank   { margin-left: auto; font-size: 11px; color: #4a4a7a; }
+    .ac-empty  { color: #5050a0; font-size: 13px; text-align: center; padding: 16px; }
 
-    /*
-      Placeholder do ícone: círculo roxo com as iniciais da moeda.
-      Aparece quando a imagem não carrega ou na lista offline.
-    */
-    .ac-ph {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: #2a2a55;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      color: #8888cc;
-      font-weight: 600;
-      flex-shrink: 0;
-      text-transform: uppercase;
-    }
-
-    /* Nome completo da moeda (ex: "Bitcoin") */
-    .ac-name {
-      color: #d0d0f0;
-      font-size: 14px;
-      font-weight: 500;
-    }
-
-    /* Símbolo da moeda (ex: "BTC") — mais apagado */
-    .ac-symbol {
-      color: #6060a0;
-      font-size: 12px;
-      margin-left: 4px;
-    }
-
-    /*
-      Ranking de mercado (#1, #2…).
-      margin-left: auto → empurra para o lado direito da linha.
-    */
-    .ac-rank {
-      margin-left: auto;
-      font-size: 11px;
-      color: #4a4a7a;
-    }
-
-    /* Mensagem "Nenhuma moeda encontrada" */
-    .ac-empty {
-      color: #5050a0;
-      font-size: 13px;
-      text-align: center;
-      padding: 16px;
-    }
-
-    /*
-      Barra de status do autocomplete — fica logo abaixo dos chips.
-      Mostra: "Carregando...", "1000 moedas prontas" ou "Modo offline".
-      Usamos flexbox para alinhar o ponto colorido e o texto.
-    */
-    .ac-status {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;  /* alinha à direita */
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    /*
-      Ponto colorido de status (parecido com os do header).
-      As classes .loading, .online e .offline mudam a cor.
-    */
-    .ac-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
+    /* Barra de status abaixo dos chips (carregando / pronto / offline) */
+    .ac-status { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+    .ac-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .ac-dot.loading { background: #3a3a80; animation: ac-pulse 1s infinite; }
     .ac-dot.online  { background: #6c5ce7; }
     .ac-dot.offline { background: #a0802a; }
+    @keyframes ac-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .ac-status-text { font-size: 11px; color: #3a3a70; }
 
-    /* Animação de pulso no ponto quando está carregando */
-    @keyframes ac-pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
+    /* Barra de progresso fina abaixo dos chips */
+    .ac-progress { height: 2px; background: #1a1a3a; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    .ac-progress-fill { height: 100%; background: #6c5ce7; width: 0%; transition: width 0.4s ease; }
+
+    /* ══════════════════════════════════════════════════════════════
+       CONTROLE DE PÁGINAS
+       #page-search → home com barra de busca (visível por padrão)
+       #page-result → dashboard de resultado (oculto por padrão)
+
+       Para mudar a animação de transição, altere a classe .page-enter
+       ══════════════════════════════════════════════════════════════ */
+    #page-search { /* home — nenhum estilo extra, usa css/style.css */ }
+
+    #page-result {
+      display: none; /* começa oculto — JS faz display:block ao exibir */
+      background: var(--res-bg);
+      min-height: 100vh;
+      padding: 32px 20px 80px;
+      font-family: 'Outfit', sans-serif;
+      color: var(--res-text);
+      /* grade decorativa de fundo igual à home */
+      background-image:
+        radial-gradient(ellipse 80% 40% at 50% -10%, rgba(108,92,231,0.15) 0%, transparent 70%),
+        linear-gradient(rgba(108,92,231,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(108,92,231,0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 40px 40px, 40px 40px;
     }
 
-    /* Texto da mensagem de status (pequeno, discreto) */
-    .ac-status-text {
-      font-size: 11px;
-      color: #3a3a70;
+    /* Animação de entrada suave dos elementos */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes gradShift {
+      /* Gradiente animado — mesmo usado no texto "criptomoeda" da home */
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+    @keyframes spin {
+      /* Spinner de carregamento */
+      to { transform: rotate(360deg); }
     }
 
-    /*
-      Barra de progresso fina abaixo dos chips.
-      Fica invisível (largura 0) até o JS iniciar o carregamento.
-    */
-    .ac-progress {
-      height: 2px;
-      background: #1a1a3a;
-      border-radius: 2px;
-      margin-top: 6px;
+    /* ══════════════════════════════════════════════════════════════
+       TELA DE CARREGAMENTO
+       Aparece entre clicar "Analisar" e os dados chegarem da API.
+       Para mudar o texto de loading, veja a função showLoading() no JS.
+       ══════════════════════════════════════════════════════════════ */
+    #loading-screen {
+      display: none; /* JS controla quando aparece */
+      position: fixed; inset: 0;
+      background: rgba(8, 8, 24, 0.95);
+      z-index: 8888;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+    #loading-screen.active { display: flex; }
+
+    .loading-spinner {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: 3px solid rgba(108,92,231,0.2);
+      border-top-color: #6c5ce7;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-coin-name {
+      font-family: 'Outfit', sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #a78bfa, #6c5ce7, #38bdf8, #a78bfa);
+      background-size: 300% 300%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: gradShift 3s ease infinite;
+    }
+    .loading-sub {
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      color: var(--res-text-dim);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       BARRA DE TOPO DO RESULTADO
+       Mostra data/hora da consulta e link para a fonte dos dados.
+       Para mudar a fonte, altere o texto e href em #result-source-link.
+       ══════════════════════════════════════════════════════════════ */
+    .res-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1200px;
+      margin: 0 auto 20px;
+      animation: fadeUp 0.4s ease both;
+    }
+
+    /* Botão de voltar — aparece no lado esquerdo da barra de topo */
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 16px;
+      background: var(--res-bg-card);
+      border: 1px solid var(--res-border);
+      border-radius: 999px;
+      color: var(--res-text-muted);
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-back:hover {
+      border-color: var(--res-violet);
+      color: #fff;
+      background: var(--res-violet-soft);
+    }
+
+    /* Info de atualização — lado direito */
+    .res-update-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--res-text-dim);
+    }
+    .res-update-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--res-violet);
+      animation: pulse 2s infinite;
+    }
+    .res-update-info a { color: var(--res-violet); text-decoration: none; }
+
+    /* ══════════════════════════════════════════════════════════════
+       CABEÇALHO DA MOEDA (Hero do resultado)
+       Contém: logo circular + nome com gradiente + símbolo + links
+       Para ajustar o tamanho do nome, mude clamp() em .hero-title
+       ══════════════════════════════════════════════════════════════ */
+    .hero-header {
+      max-width: 1200px;
+      margin: 0 auto 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      animation: fadeUp 0.5s ease both 0.05s;
+    }
+    .hero-top-row { display: flex; align-items: center; gap: 14px; }
+
+    /* Logo circular da moeda — vem da imagem da CoinGecko */
+    .hero-logo {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      border: 2px solid var(--res-border-h);
+      box-shadow: 0 0 24px var(--res-violet-glow);
+    }
+
+    .hero-name-block { text-align: left; }
+
+    /* Nome da moeda com gradiente animado — igual ao "criptomoeda" da home */
+    .hero-title {
+      font-size: clamp(2rem, 5vw, 3.2rem); /* ← ajuste o tamanho aqui se quiser */
+      font-weight: 800;
+      line-height: 1;
+      background: linear-gradient(135deg, #a78bfa, #6c5ce7, #38bdf8, #a78bfa);
+      background-size: 300% 300%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: gradShift 5s ease infinite;
+    }
+
+    /* Linha de links: símbolo + rank + website + twitter + telegram + discord */
+    .hero-links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    /* Cada link/badge da linha de links */
+    .hero-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--res-text-muted);
+      text-decoration: none;
+      padding: 5px 14px;
+      background: var(--res-bg-card);
+      border: 1px solid var(--res-border);
+      border-radius: 999px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .hero-link:hover {
+      border-color: var(--res-violet);
+      color: #fff;
+      background: var(--res-violet-soft);
+      box-shadow: 0 0 12px rgba(108,92,231,0.2);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       GRADE DOS 3 CARDS: [Contratos] [Estatísticas] [Estágio]
+       grid-template-columns define as larguras:
+         260px → card de contratos (fixo, pequeno)
+         1fr   → estatísticas (cresce para ocupar o resto)
+         240px → gauge (fixo, pequeno)
+       Para telas menores veja @media no fim desta <style>.
+       ══════════════════════════════════════════════════════════════ */
+    .result-grid {
+      display: grid;
+      grid-template-columns: 260px 1fr 240px; /* ← ajuste larguras aqui */
+      gap: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* ── Base comum de todos os cards ── */
+    .card {
+      background: var(--res-bg-card);
+      border: 1px solid var(--res-border);
+      border-radius: 18px;
+      padding: 22px;
+      position: relative;
       overflow: hidden;
+      animation: fadeUp 0.5s ease both;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .card:hover {
+      border-color: var(--res-border-h);
+      box-shadow: 0 0 28px rgba(108,92,231,0.07);
+    }
+    /* Linha decorativa no topo de cada card */
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 10%; right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--res-violet), transparent);
+      opacity: 0.4;
+    }
+    /* Animação escalonada: cada card entra com um pequeno atraso */
+    .card:nth-child(1) { animation-delay: 0.10s; }
+    .card:nth-child(2) { animation-delay: 0.18s; }
+    .card:nth-child(3) { animation-delay: 0.26s; }
+
+    /* Título interno de cada card (ex: "🔗 Contratos") */
+    .card-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--res-violet);
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    /* Linha separadora que cresce ao lado do título */
+    .card-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--res-border);
     }
 
-    /* A parte colorida que vai crescendo de 0% a 100% */
-    .ac-progress-fill {
-      height: 100%;
-      background: #6c5ce7;
-      width: 0%;
-      transition: width 0.4s ease;   /* animação suave */
+    /* ══════════════════════════════════════════════════════════════
+       CARD: CONTRATOS
+       Exibe uma lista de redes/contratos no combobox.
+       Ao selecionar a rede, o endereço aparece abaixo com botão copiar.
+       ══════════════════════════════════════════════════════════════ */
+    .contracts-card { grid-column: 1; }
+
+    .contract-select-wrap { position: relative; margin-bottom: 14px; }
+
+    /* Combobox de seleção de rede — estilo visual escuro */
+    .contract-select {
+      width: 100%;
+      background: var(--res-bg-card2);
+      border: 1px solid var(--res-border);
+      border-radius: 10px;
+      padding: 10px 34px 10px 14px;
+      color: var(--res-text);
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      appearance: none; /* remove a seta padrão do sistema */
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .contract-select:focus { outline: none; border-color: var(--res-violet); }
+
+    /* Seta decorativa do combobox — fica em cima do select via position:absolute */
+    .contract-arrow {
+      position: absolute; right: 12px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--res-text-muted);
+      pointer-events: none; /* não bloqueia cliques */
+      font-size: 10px;
     }
 
+    /* Caixa que exibe o endereço selecionado */
+    .contract-box {
+      background: var(--res-bg-card2);
+      border: 1px solid var(--res-border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    /* Rótulo da rede selecionada (ex: "ETHEREUM") */
+    .contract-net {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--res-text-dim);
+      margin-bottom: 8px;
+    }
+    .contract-addr-row { display: flex; align-items: flex-start; gap: 8px; }
+
+    /* Endereço do contrato — quebra linha em endereços longos */
+    .contract-addr {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--res-violet);
+      word-break: break-all;
+      flex: 1;
+      line-height: 1.5;
+    }
+
+    /* Botão de copiar endereço */
+    .copy-btn {
+      background: var(--res-violet-soft);
+      border: 1px solid var(--res-border);
+      border-radius: 7px;
+      padding: 6px 9px;
+      color: var(--res-text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { border-color: var(--res-violet); color: var(--res-violet); }
+
+    /* ══════════════════════════════════════════════════════════════
+       CARD: ESTATÍSTICAS
+       Grade interna 3 colunas com stat-boxes.
+       .span2 → ocupa 2 colunas; .span3 → ocupa a linha inteira.
+       Para adicionar/remover métricas, duplique ou remova .stat-box.
+       ══════════════════════════════════════════════════════════════ */
+    .stats-card { grid-column: 2; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr; /* ← 3 colunas iguais */
+      gap: 10px;
+    }
+
+    .stat-box {
+      background: var(--res-bg-card2);
+      border: 1px solid var(--res-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      transition: all 0.2s;
+    }
+    .stat-box:hover {
+      border-color: var(--res-border-h);
+      background: rgba(108,92,231,0.06);
+    }
+    .stat-box.span2 { grid-column: span 2; }
+    .stat-box.span3 { grid-column: span 3; } /* ← ocupa linha inteira */
+
+    /* Rótulo da métrica (ex: "PREÇO") */
+    .stat-lbl {
+      font-size: 10px;
+      color: var(--res-text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    /* Valor principal da métrica */
+    .stat-val {
+      font-size: 17px; /* ← ajuste o tamanho dos valores aqui */
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+      line-height: 1.1;
+    }
+    /* Variações de cor para diferentes tipos de métricas */
+    .stat-val.violet { color: #a78bfa; } /* market cap, TVL */
+    .stat-val.green  { color: #34d399; } /* % liberado, variação positiva */
+    .stat-val.amber  { color: #fbbf24; } /* % bloqueado, alerta */
+
+    /* Texto secundário abaixo do valor principal */
+    .stat-sub { font-size: 10px; color: var(--res-text-muted); margin-top: 3px; }
+
+    /* ══════════════════════════════════════════════════════════════
+       CARD: GAUGE (Estágio de MarketCap)
+       Círculo SVG animado que representa o tamanho da moeda.
+
+       COMO FUNCIONA:
+       • O círculo cinza (#1a1a3a) é o trilho de fundo (sempre 100%)
+       • O círculo colorido é o arco de progresso
+       • stroke-dasharray=452.4 é a circunferência (2πr, r=72)
+       • stroke-dashoffset controla quanto do arco aparece:
+           offset=452.4 → 0% (nada visível)
+           offset=0     → 100% (círculo completo)
+       • O JS calcula o offset baseado no Market Cap
+
+       Para mudar o RAIO do círculo:
+         1. Altere r="72" nos dois <circle>
+         2. Recalcule stroke-dasharray = 2 × 3.14159 × novoRaio
+         3. Atualize o comentário "r=72" na função animateGauge() do JS
+       ══════════════════════════════════════════════════════════════ */
+    .gauge-card { grid-column: 3; }
+
+    .gauge-wrap {
+      position: relative;
+      width: 176px; height: 176px; /* ← tamanho do círculo — mude aqui e no SVG */
+      margin: 0 auto 16px;
+    }
+    .gauge-svg {
+      position: absolute; top: 0; left: 0;
+      transform: rotate(-90deg); /* faz o arco começar do topo */
+    }
+    .gauge-inner {
+      /* Centralizado dentro do círculo via position+transform */
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      width: 116px;
+    }
+
+    /* Nome da categoria (ex: "Blue Chip") — gradiente pequeno */
+    .gauge-cat {
+      font-size: 12px; /* ← tamanho do nome da categoria no círculo */
+      font-weight: 800;
+      background: linear-gradient(135deg, #a78bfa, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.2;
+    }
+
+    /* Valor do Market Cap dentro do círculo
+       CORREÇÃO: era 26px (muito grande). Agora está em 15px.
+       Para ajustar o tamanho, mude o font-size aqui ↓           */
+    .gauge-mcap-val {
+      font-size: 15px; /* ← ESTE é o valor que aparece dentro do círculo */
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+      line-height: 1.2;
+      margin: 3px 0 2px;
+      word-break: break-all;
+    }
+
+    /* Rótulo "Market Cap" abaixo do valor — bem pequeno e discreto */
+    .gauge-mcap-lbl {
+      font-size: 9px;
+      color: var(--res-text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Lista de estágios abaixo do círculo ── */
+    .stages { display: flex; flex-direction: column; gap: 5px; }
+
+    .stage {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      transition: all 0.25s;
+    }
+    /* Estágio ativo (o da moeda pesquisada) fica destacado */
+    .stage.active {
+      background: var(--res-violet-soft);
+      border-color: var(--res-border-h);
+    }
+    .stage-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .stage-name { font-size: 11px; font-weight: 600; color: var(--res-text-muted); flex: 1; }
+    .stage.active .stage-name { color: var(--res-text); }
+    .stage-range { font-size: 10px; color: var(--res-text-dim); font-family: 'JetBrains Mono', monospace; }
+    .stage.active .stage-range { color: var(--res-text-muted); }
+
+    /* ══════════════════════════════════════════════════════════════
+       RESPONSIVO
+       Para adicionar breakpoints, copie o padrão abaixo.
+       ══════════════════════════════════════════════════════════════ */
+    @media (max-width: 960px) {
+      /* Em tablets: contratos e gauge lado a lado, estatísticas em baixo */
+      .result-grid { grid-template-columns: 1fr 1fr; }
+      .contracts-card { grid-column: 1; }
+      .gauge-card     { grid-column: 2; }
+      .stats-card     { grid-column: 1 / -1; }
+      .stats-grid     { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 600px) {
+      /* Em celular: tudo em coluna única */
+      .result-grid { grid-template-columns: 1fr; }
+      .contracts-card, .gauge-card, .stats-card { grid-column: 1; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
   </style>
 </head>
-
 <body>
 
-  <!--
-    .page-wrap — div que envolve toda a página.
-    Serve para controlar o z-index globalmente e
-    aplicar estilos de layout que afetam tudo de uma vez.
-  -->
-  <div class="page-wrap">
+  <!-- ══════════════════════════════════════════════════════════════
+       SPINNER DE CARREGAMENTO (overlay global)
+       Fica na frente de tudo enquanto a API responde.
+       O JS adiciona/remove a classe .active para mostrar/esconder.
+       ══════════════════════════════════════════════════════════════ -->
+  <div id="loading-screen">
+    <div class="loading-spinner"></div>
+    <div class="loading-coin-name" id="loading-coin-name">Buscando dados...</div>
+    <div class="loading-sub">Consultando CoinGecko + DeFiLlama</div>
+  </div>
 
 
-    <!-- ╔══════════════════════════════════════════════╗
-         ║  HEADER                                      ║
-         ║  Fixo no topo — sempre visível ao rolar      ║
-         ║  Logo | Status APIs | Botão imprimir         ║
-         ╚══════════════════════════════════════════════╝
+  <!-- ══════════════════════════════════════════════════════════════
+       PÁGINA: HOME (busca)
+       Visível por padrão. O JS esconde ao clicar em Analisar.
+       ══════════════════════════════════════════════════════════════ -->
+  <div id="page-search">
 
-         O CSS em style.css define:
-           position: fixed → gruda no topo da tela
-           backdrop-filter → efeito de vidro fosco
-    -->
+    <!-- ╔══════════════════════════════════╗
+         ║  HEADER fixo                     ║
+         ╚══════════════════════════════════╝ -->
     <header>
-
-      <!-- Logo clicável — href="#" leva ao topo da página -->
       <a class="logo" href="#">
         <div class="logo-badge">🔍</div>
         <div>
@@ -277,164 +673,66 @@
         </div>
       </a>
 
-      <!--
-        Pílulas de status das APIs.
-        São visuais apenas — não verificam a conexão em tempo real.
-        Para tornar dinâmico, o api.js pode adicionar/remover classes
-        baseado nas respostas das requisições.
-
-        dot-green  → CoinGecko (dados de mercado)
-        dot-violet → DeFiLlama (dados de TVL/DeFi)
-        dot-amber  → Mock Data (dados simulados quando API falha)
-      -->
+      <!-- Pílulas de status das APIs — visuais, sem verificação em tempo real -->
       <div class="header-pills">
-        <div class="api-pill">
-          <div class="api-pill-dot dot-green"></div>
-          CoinGecko
-        </div>
-        <div class="api-pill">
-          <div class="api-pill-dot dot-violet"></div>
-          DeFiLlama
-        </div>
-        <div class="api-pill">
-          <div class="api-pill-dot dot-amber"></div>
-          Mock Data
-        </div>
+        <div class="api-pill"><div class="api-pill-dot dot-green"></div>CoinGecko</div>
+        <div class="api-pill"><div class="api-pill-dot dot-violet"></div>DeFiLlama</div>
+        <div class="api-pill"><div class="api-pill-dot dot-amber"></div>Mock Data</div>
       </div>
 
-      <!-- window.print() abre o diálogo de impressão do navegador -->
       <button class="btn-print" onclick="window.print()">⎙ Imprimir</button>
-
     </header>
-    <!-- FIM HEADER -->
 
 
-    <!-- ╔══════════════════════════════════════════════╗
-         ║  HERO                                        ║
-         ║  Área central — o coração da página inicial  ║
-         ║  Badge | Título | Subtítulo | Busca | Chips  ║
-         ╚══════════════════════════════════════════════╝ -->
+    <!-- ╔══════════════════════════════════╗
+         ║  HERO — busca central            ║
+         ╚══════════════════════════════════╝ -->
     <section class="hero">
-
-      <!--
-        Bolinhas decorativas de fundo (orbs).
-        São divs com border-radius: 50% (círculo) e
-        filter: blur() para criar o efeito de brilho difuso.
-        A animação é definida no style.css.
-        NÃO contêm conteúdo — são puramente decorativas.
-      -->
       <div class="hero-orbs">
         <div class="orb orb-1"></div>
         <div class="orb orb-2"></div>
         <div class="orb orb-3"></div>
       </div>
-
-      <!-- Grade decorativa de fundo (linhas finas) — só visual -->
       <div class="hero-grid-overlay"></div>
 
-      <!--
-        Badge "Do Your Own Research" — pequena etiqueta acima do título.
-        .hero-tag-dot → o ponto animado verde/roxo que pisca.
-      -->
       <div class="hero-tag">
         <span class="hero-tag-dot"></span>
         Do Your Own Research
       </div>
 
-      <!--
-        Título principal da página.
-        .grad → classe que aplica o gradiente colorido no texto.
-        O gradiente é definido em style.css com background-clip: text.
-      -->
       <h1 class="hero-h1">
         Pesquise qualquer<br>
         <span class="grad">criptomoeda</span>
       </h1>
 
-      <!-- Subtítulo explicando o propósito da ferramenta -->
       <p class="hero-sub">
         Métricas em tempo real + formulário de análise completo
         para tomar decisões informadas.
       </p>
 
-
-      <!-- ══════════════════════════════════════════════════════
-           BARRA DE BUSCA COM AUTOCOMPLETE (COMBOBOX)
-           ══════════════════════════════════════════════════════
-
-           COMO FUNCIONA:
-           1. O usuário começa a digitar no campo #cryptoInput
-           2. O JavaScript (no <script> lá embaixo) filtra a lista
-              de moedas que foi carregada da API CoinGecko
-           3. Os resultados aparecem no #autocomplete-dropdown
-           4. Ao clicar em uma moeda (ou pressionar Enter),
-              o campo é preenchido e o main.js dispara a análise
-
-           IDs IMPORTANTES — não renomeie!
-           • id="cryptoInput" → o main.js lê o valor daqui
-           • id="btnSearch"   → o main.js escuta o clique aqui
-           • id="autocomplete-dropdown" → o JS do autocomplete usa esse id
-      -->
+      <!-- ── BARRA DE BUSCA COM AUTOCOMPLETE ──
+           id="cryptoInput" → o JS lê o valor daqui (ID da CoinGecko)
+           id="btnSearch"   → o JS escuta o clique aqui            -->
       <div class="search-wrap">
-
-        <!-- Ícone de lupa (apenas visual, não é clicável) -->
         <div class="search-icon">🔎</div>
-
-        <!--
-          Campo de texto principal.
-          autocomplete="off" → desativa as sugestões do navegador
-          (usamos nossa própria lista, não a do browser)
-        -->
         <input
           type="text"
           id="cryptoInput"
           placeholder="Ex: bitcoin, ethereum, solana, sui..."
           autocomplete="off"
         >
-
-        <!--
-          Botão "Analisar" — dispara a pesquisa.
-          O main.js adiciona um addEventListener('click') aqui.
-          Ao clicar, ele lê o valor de #cryptoInput e inicia a análise.
-        -->
         <button class="search-btn" id="btnSearch">
           <span>Analisar</span>
           <span class="arrow">→</span>
         </button>
-
       </div>
-      <!-- FIM BARRA DE BUSCA -->
 
-      <!--
-        Dropdown do autocomplete — fica FORA do .search-wrap
-        propositalmente! O style.css provavelmente tem overflow:hidden
-        no .search-wrap, o que cortaria o dropdown se ele estivesse dentro.
-        Solução: o JS usa getBoundingClientRect() para medir a posição
-        exata da barra na tela e aplica position:fixed com top/left/width
-        calculados. Resultado: o dropdown aparece colado abaixo da barra,
-        independente de qualquer overflow do container pai.
-      -->
+      <!-- Dropdown do autocomplete — posicionado via JS com getBoundingClientRect() -->
       <div id="autocomplete-dropdown"></div>
 
-
-      <!-- ══════════════════════════════════════════════════════
-           CHIPS DE ATALHO RÁPIDO
-           ══════════════════════════════════════════════════════
-
-           Cada chip tem um data-id com o ID exato da moeda
-           na API do CoinGecko. Quando o usuário clica:
-             1. O main.js lê o data-id (ex: "bitcoin")
-             2. Preenche o campo #cryptoInput com esse valor
-             3. Dispara automaticamente a análise
-
-           Para adicionar um novo chip:
-           <div class="chip" data-id="ID-DA-COINGECKO">SÍMBOLO</div>
-
-           Para descobrir o ID correto, acesse:
-           https://www.coingecko.com e veja a URL da moeda.
-           Ex: https://www.coingecko.com/en/coins/bitcoin → id = "bitcoin"
-                https://www.coingecko.com/en/coins/avalanche → id = "avalanche-2"
-      -->
+      <!-- ── CHIPS DE ATALHO RÁPIDO ──
+           data-id deve ser o ID exato da CoinGecko
+           Para adicionar: <div class="chip" data-id="ID-AQUI">SÍMBOLO</div> -->
       <div class="chips">
         <div class="chip" data-id="bitcoin">BTC</div>
         <div class="chip" data-id="ethereum">ETH</div>
@@ -446,19 +744,8 @@
         <div class="chip" data-id="arbitrum">ARB</div>
         <div class="chip" data-id="render-token">RNDR</div>
       </div>
-      <!-- FIM CHIPS -->
 
-
-      <!--
-        Barra de progresso e status do carregamento do autocomplete.
-        Aparecem discretamente abaixo dos chips.
-
-        .ac-progress      → trilho cinza da barra (container)
-        #ac-prog-fill     → barra roxa que cresce de 0% a 100%
-        .ac-status        → linha com ponto colorido + texto
-        #ac-dot           → ponto que muda de cor (loading/online/offline)
-        #ac-status-text   → mensagem legível para o usuário
-      -->
+      <!-- Barra de progresso do carregamento do autocomplete -->
       <div class="ac-progress">
         <div class="ac-progress-fill" id="ac-prog-fill"></div>
       </div>
@@ -467,303 +754,401 @@
         <span class="ac-status-text" id="ac-status-text">Carregando moedas...</span>
       </div>
 
-      
+      <p class="hero-hint">
+        Use o ID do CoinGecko:
+        <span class="hint-code">bitcoin</span>,
+        <span class="hint-code">ethereum</span>,
+        <span class="hint-code">avalanche-2</span>…
+        &nbsp;·&nbsp;
+        Erro 429? Aguarde ~30s (limite da API gratuita)
+      </p>
     </section>
-    <!-- FIM HERO -->
 
 
-    <!-- ╔══════════════════════════════════════════════╗
-         ║  FEATURES — Cards de destaque               ║
-         ║  Exibe o que o site oferece ao usuário       ║
-         ╚══════════════════════════════════════════════╝
-
-         .features-grid → grade CSS com os 6 cards.
-         O layout (colunas, espaçamento) está em style.css.
-         feat-card--highlight → card com destaque visual especial.
-    -->
+    <!-- ╔══════════════════════════════════╗
+         ║  FEATURES — Cards de destaque    ║
+         ╚══════════════════════════════════╝ -->
     <section class="features">
-
       <div class="features-label">O que você vai analisar</div>
-
       <div class="features-grid">
-
         <div class="feat-card">
           <div class="feat-icon">📊</div>
           <div class="feat-title">Métricas em Tempo Real</div>
           <div class="feat-desc">MarketCap, FDV, MC/FDV, TVL, Volume 24h, Supply circulante e muito mais via CoinGecko e DeFiLlama.</div>
         </div>
-
-        <!-- Este card tem destaque visual — borda ou fundo diferente via CSS -->
         <div class="feat-card feat-card--highlight">
           <div class="feat-icon">📋</div>
           <div class="feat-title">Formulário DYOR Completo</div>
           <div class="feat-desc">6 abas de análise: Fundamentos, Tokenomics, Equipe, Mercado, Riscos e Decisão Final com score calculado.</div>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">📈</div>
           <div class="feat-title">Gráficos Interativos</div>
           <div class="feat-desc">Visualize o estágio de mercado e a distribuição de supply com gráficos modernos e responsivos.</div>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">💾</div>
           <div class="feat-title">Salve suas Pesquisas</div>
           <div class="feat-desc">Guarde e compare suas análises anteriores. Tudo salvo localmente no seu navegador, sem login.</div>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">🚦</div>
           <div class="feat-title">Mapa de Riscos</div>
           <div class="feat-desc">Identifique red flags e green flags de forma visual. Histórico de hacks, concentração e descentralização.</div>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">⎙</div>
           <div class="feat-title">Exporte em PDF</div>
           <div class="feat-desc">Imprima ou salve sua análise completa em PDF para arquivar ou compartilhar com segurança.</div>
         </div>
-
       </div>
-
     </section>
-    <!-- FIM FEATURES -->
 
 
-    <!-- ╔══════════════════════════════════════════════╗
-         ║  FOOTER                                      ║
-         ║  Rodapé com logo, aviso legal e créditos     ║
-         ╚══════════════════════════════════════════════╝ -->
+    <!-- ╔══════════════════════════════════╗
+         ║  FOOTER                          ║
+         ╚══════════════════════════════════╝ -->
     <footer class="footer">
       <div class="footer-inner">
-
-        <!-- Logo menor repetido no rodapé -->
         <div class="footer-logo">
           <div class="logo-badge small">🔍</div>
           <span class="logo-text">DYOR</span>
         </div>
-
-        <!-- Aviso obrigatório: a ferramenta não é aconselhamento financeiro -->
         <p class="footer-disclaimer">
           ⚠️ Este site é apenas uma ferramenta de pesquisa. Nada aqui constitui aconselhamento financeiro.
           <strong>Invista com responsabilidade.</strong>
         </p>
-
-        <!-- Créditos das APIs usadas, com links para os sites oficiais -->
         <div class="footer-apis">
           Dados via
           <a href="https://www.coingecko.com" target="_blank">CoinGecko</a> &amp;
           <a href="https://defillama.com" target="_blank">DeFiLlama</a>
         </div>
-
       </div>
     </footer>
-    <!-- FIM FOOTER -->
-
 
   </div>
-  <!-- FIM .page-wrap -->
+  <!-- FIM #page-search -->
 
 
   <!-- ══════════════════════════════════════════════════════════════
-       SCRIPTS — carregados no FINAL do <body>
-       ══════════════════════════════════════════════════════════════
+       PÁGINA: RESULTADO
+       Oculta por padrão (display:none no CSS).
+       O JS faz display:block quando os dados chegam da API.
+       ══════════════════════════════════════════════════════════════ -->
+  <div id="page-result">
 
-       A ORDEM IMPORTA — cada arquivo depende do anterior:
+    <!-- ── Barra de topo: voltar + data de atualização ── -->
+    <div class="res-topbar">
+      <!-- Botão voltar: chama a função goBack() definida no JS -->
+      <button class="btn-back" onclick="goBack()">← Nova Pesquisa</button>
 
-       1. config.js   → define variáveis globais (URLs, chaves)
-       2. api.js      → funções para buscar dados nas APIs externas
-       3. charts.js   → cria e atualiza os gráficos (usa ApexCharts)
-       4. form.js     → lógica do formulário DYOR (abas, pontuação)
-       5. autocomplete.js → novo! combobox de busca (este arquivo)
-       6. main.js     → orquestra tudo: conecta busca → API → tela
+      <div class="res-update-info">
+        <span class="res-update-dot"></span>
+        Atualizado em <span id="update-time">—</span>
+        &nbsp;·&nbsp; Fonte:
+        <a id="result-source-link" href="https://www.coingecko.com" target="_blank">CoinGecko API</a>
+      </div>
+    </div>
 
-       Por que separar o autocomplete?
-       Para não misturar responsabilidades dentro do main.js e
-       facilitar a manutenção: se precisar ajustar a busca,
-       você sabe exatamente onde olhar.
-  -->
+    <!-- ── Cabeçalho da moeda: logo + nome gradiente + links ── -->
+    <div class="hero-header">
+      <div class="hero-top-row">
+        <!-- Logo da moeda — vem de data.image.large da CoinGecko -->
+        <img id="hero-logo" class="hero-logo" src="" alt=""
+             onerror="this.style.display='none'"/>
+        <div class="hero-name-block">
+          <!-- Nome com gradiente animado — preenchido pelo renderResult() -->
+          <h1 class="hero-title" id="hero-title">—</h1>
+        </div>
+      </div>
 
-  <!-- 1. Configurações globais (URLs das APIs, constantes) -->
+      <!-- Símbolo, ranking e links sociais — gerados pelo JS (buildLinks) -->
+      <div class="hero-links" id="hero-links"></div>
+    </div>
+
+    <!-- ── Grade dos 3 cards ── -->
+    <div class="result-grid">
+
+      <!-- ════ CARD 1: CONTRATOS ════════════════════════════════
+           Preenchido por buildContracts() com data.platforms da API.
+           Se a moeda não tiver contratos, mostra "Nativo / L1".
+           ════════════════════════════════════════════════════════ -->
+      <div class="card contracts-card">
+        <div class="card-label">🔗 Contratos</div>
+
+        <!-- Combobox de redes — preenchido dinamicamente pelo JS -->
+        <div class="contract-select-wrap">
+          <select class="contract-select" id="contract-select"
+                  onchange="showContract(this.value)"></select>
+          <span class="contract-arrow">▼</span>
+        </div>
+
+        <!-- Exibição do endereço da rede selecionada -->
+        <div class="contract-box">
+          <div class="contract-net" id="contract-net">—</div>
+          <div class="contract-addr-row">
+            <div class="contract-addr" id="contract-addr">—</div>
+            <button class="copy-btn" onclick="copyAddr()" title="Copiar endereço">⧉</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════ CARD 2: ESTATÍSTICAS ══════════════════════════════
+           Para adicionar uma nova métrica:
+             1. Copie um .stat-box
+             2. Mude o id do .stat-val
+             3. No JS, adicione setText('novo-id', valorFormatado)
+           ════════════════════════════════════════════════════════ -->
+      <div class="card stats-card">
+        <div class="card-label">📊 Estatísticas</div>
+        <div class="stats-grid">
+
+          <div class="stat-box">
+            <div class="stat-lbl">Preço</div>
+            <div class="stat-val" id="s-price">—</div>
+            <div class="stat-sub" id="s-chg">—</div>  <!-- variação 24h -->
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">Market Cap</div>
+            <div class="stat-val violet" id="s-mcap">—</div>
+            <div class="stat-sub" id="s-mcap-rank">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">FDV</div>
+            <div class="stat-val" id="s-fdv">—</div>
+          </div>
+
+          <div class="stat-box">
+            <div class="stat-lbl">Volume 24h</div>
+            <div class="stat-val" id="s-vol">—</div>
+            <div class="stat-sub" id="s-vol-pct">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">Circ. Supply</div>
+            <div class="stat-val" id="s-supply">—</div>
+            <div class="stat-sub" id="s-supply-pct">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">Total Supply</div>
+            <div class="stat-val" id="s-total">—</div>
+          </div>
+
+          <div class="stat-box">
+            <div class="stat-lbl">% Liberado</div>
+            <div class="stat-val green" id="s-lib">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">% Bloqueado</div>
+            <div class="stat-val amber" id="s-locked">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-lbl">Volume 7D</div>
+            <div class="stat-val" id="s-vol7">—</div>
+          </div>
+
+          <!-- span3 = ocupa as 3 colunas (linha inteira) -->
+          <div class="stat-box span3">
+            <div class="stat-lbl">TVL (DeFiLlama)</div>
+            <div class="stat-val violet" id="s-tvl">—</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ════ CARD 3: GAUGE (Estágio de MarketCap) ══════════════
+           SVG animado. Os IDs usados pelo JS são:
+             #gauge-arc → o arco colorido (stroke-dashoffset muda)
+             #g-cat     → nome da categoria (ex: "Blue Chip")
+             #g-mcap    → valor do market cap (ex: "US$ 51.09 B")
+           ════════════════════════════════════════════════════════ -->
+      <div class="card gauge-card">
+        <div class="card-label">🏷️ Estágio</div>
+
+        <div class="gauge-wrap">
+          <!-- SVG do círculo animado
+               width/height devem bater com .gauge-wrap (176x176)
+               cx, cy = centro = 176/2 = 88
+               r = 72 (raio do arco)
+               stroke-dasharray = 2 × π × 72 ≈ 452.4 (circunferência) -->
+          <svg class="gauge-svg" width="176" height="176">
+            <defs>
+              <!-- Gradiente do arco colorido — pode personalizar as cores aqui -->
+              <linearGradient id="gGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%"   stop-color="#a78bfa"/>
+                <stop offset="50%"  stop-color="#6c5ce7"/>
+                <stop offset="100%" stop-color="#38bdf8"/>
+              </linearGradient>
+            </defs>
+            <!-- Trilho cinza de fundo (sempre completo) -->
+            <circle cx="88" cy="88" r="72"
+              fill="none" stroke="#1a1a3a" stroke-width="16" stroke-linecap="round"/>
+            <!-- Arco de progresso — o JS anima stroke-dashoffset -->
+            <circle cx="88" cy="88" r="72"
+              id="gauge-arc"
+              fill="none"
+              stroke="url(#gGrad)"
+              stroke-width="16"
+              stroke-linecap="round"
+              stroke-dasharray="452.4"
+              stroke-dashoffset="452.4"
+              style="transition: stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1);"/>
+          </svg>
+
+          <!-- Conteúdo centralizado dentro do círculo -->
+          <div class="gauge-inner">
+            <!-- Nome da categoria: Gema / Pequena / Média / Blue Chip / Big Player -->
+            <div class="gauge-cat" id="g-cat">—</div>
+            <!-- Valor do Market Cap — CORRIGIDO para 15px (era 26px antes) -->
+            <div class="gauge-mcap-val" id="g-mcap">US$ —</div>
+            <!-- Rótulo discreto "Market Cap" -->
+            <div class="gauge-mcap-lbl">Market Cap</div>
+          </div>
+        </div>
+
+        <!-- Lista de estágios — o ativo recebe a classe .active via JS -->
+        <div class="stages">
+          <!-- id="st-NOME" → o JS adiciona .active no estágio correto -->
+          <div class="stage" id="st-gema">
+            <div class="stage-dot" style="background:#64748b;"></div>
+            <span class="stage-name">Gema</span>
+            <span class="stage-range">&lt;150M</span>
+          </div>
+          <div class="stage" id="st-pequena">
+            <div class="stage-dot" style="background:#34d399;"></div>
+            <span class="stage-name">Pequena</span>
+            <span class="stage-range">150M–1B</span>
+          </div>
+          <div class="stage" id="st-media">
+            <div class="stage-dot" style="background:#38bdf8;"></div>
+            <span class="stage-name">Média</span>
+            <span class="stage-range">1B–10B</span>
+          </div>
+          <div class="stage" id="st-bluechip">
+            <div class="stage-dot" style="background:#a78bfa;"></div>
+            <span class="stage-name">Blue Chip</span>
+            <span class="stage-range">10B–300B</span>
+          </div>
+          <div class="stage" id="st-bigplayer">
+            <div class="stage-dot" style="background:#fbbf24;"></div>
+            <span class="stage-name">Big Player</span>
+            <span class="stage-range">&gt;300B</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <!-- FIM .result-grid -->
+
+  </div>
+  <!-- FIM #page-result -->
+
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SCRIPTS — carregados no FINAL do body (ordem importa!)
+
+       ORDEM DE CARREGAMENTO:
+       1. config.js   → constantes globais (URLs, chaves)
+       2. api.js      → funções de API antigas (mantidas por compatibilidade)
+       3. charts.js   → gráficos (ApexCharts)
+       4. form.js     → formulário DYOR
+       5. Autocomplete (inline abaixo)
+       6. Resultado + Busca integrados (inline abaixo)
+
+       ⚠️ js/main.js FOI REMOVIDO — toda a lógica de busca está
+          agora no bloco inline "6. BUSCA + RESULTADO" abaixo.
+       ══════════════════════════════════════════════════════════════ -->
+
   <script src="js/config.js"></script>
-
-  <!-- 2. Chamadas às APIs externas (CoinGecko, DeFiLlama) -->
   <script src="js/api.js"></script>
-
-  <!-- 3. Gráficos com ApexCharts -->
   <script src="js/charts.js"></script>
-
-  <!-- 4. Lógica do formulário DYOR -->
   <script src="js/form.js"></script>
 
-  <!-- ════════════════════════════════════════════════════════════
+
+  <!-- ══════════════════════════════════════════════════════════════
        5. AUTOCOMPLETE — Combobox de busca inteligente
-       ════════════════════════════════════════════════════════════
-
-       Este bloco cuida de TODA a lógica do dropdown de sugestões.
-       Ele é auto-contido: não depende de nenhuma variável do main.js.
-       O main.js continua funcionando normalmente — ele lê o valor
-       de #cryptoInput e escuta o #btnSearch, exatamente como antes.
-
-       FLUXO COMPLETO:
-       ──────────────
-       A) Ao carregar a página:
-          → Tenta buscar as top 1000 moedas da CoinGecko (4 páginas)
-          → Se a API falhar ou demorar: usa a lista FALLBACK offline
-          → Atualiza a barra de status e de progresso
-
-       B) Ao digitar no campo:
-          → Filtra a lista pelo nome, símbolo ou ID da moeda
-          → Renderiza os resultados no dropdown
-          → Destaca o item selecionado pelo teclado (↑ ↓ Enter)
-
-       C) Ao selecionar uma moeda (mouse ou teclado):
-          → Preenche o #cryptoInput com o ID correto da CoinGecko
-          → Fecha o dropdown
-          → O main.js detecta o valor e pode disparar a busca
-  -->
+       (igual à versão anterior, sem alterações)
+       ══════════════════════════════════════════════════════════════ -->
   <script>
   (function () {
     /*
-      ── LISTA DE FALLBACK (modo offline) ──────────────────────────
-      Usada quando a API do CoinGecko não responde.
-      Cobre as moedas mais populares + projetos como
-      Ethena (ENA), Virtuals Protocol (VIRTUAL), AI memecoins, etc.
-
-      Cada objeto tem:
-        id     → ID exato da CoinGecko (usado na URL da análise)
-        symbol → símbolo da moeda (BTC, ETH...)
-        name   → nome completo (Bitcoin, Ethereum...)
-        r      → ranking de market cap
+      Lista FALLBACK (offline) — usada quando a API do CoinGecko
+      não responde. Cobre as moedas mais populares.
     */
     var FALLBACK = [
-      { id: 'bitcoin',                         symbol: 'BTC',      name: 'Bitcoin',               r: 1   },
-      { id: 'ethereum',                         symbol: 'ETH',      name: 'Ethereum',              r: 2   },
-      { id: 'tether',                           symbol: 'USDT',     name: 'Tether',                r: 3   },
-      { id: 'binancecoin',                      symbol: 'BNB',      name: 'BNB',                   r: 4   },
-      { id: 'solana',                           symbol: 'SOL',      name: 'Solana',                r: 5   },
-      { id: 'ripple',                           symbol: 'XRP',      name: 'XRP',                   r: 6   },
-      { id: 'usd-coin',                         symbol: 'USDC',     name: 'USDC',                  r: 7   },
-      { id: 'dogecoin',                         symbol: 'DOGE',     name: 'Dogecoin',              r: 8   },
-      { id: 'cardano',                          symbol: 'ADA',      name: 'Cardano',               r: 9   },
-      { id: 'tron',                             symbol: 'TRX',      name: 'TRON',                  r: 10  },
-      { id: 'avalanche-2',                      symbol: 'AVAX',     name: 'Avalanche',             r: 11  },
-      { id: 'shiba-inu',                        symbol: 'SHIB',     name: 'Shiba Inu',             r: 12  },
-      { id: 'polkadot',                         symbol: 'DOT',      name: 'Polkadot',              r: 13  },
-      { id: 'chainlink',                        symbol: 'LINK',     name: 'Chainlink',             r: 14  },
-      { id: 'bitcoin-cash',                     symbol: 'BCH',      name: 'Bitcoin Cash',          r: 15  },
-      { id: 'litecoin',                         symbol: 'LTC',      name: 'Litecoin',              r: 16  },
-      { id: 'uniswap',                          symbol: 'UNI',      name: 'Uniswap',               r: 17  },
-      { id: 'near',                             symbol: 'NEAR',     name: 'NEAR Protocol',         r: 18  },
-      { id: 'stellar',                          symbol: 'XLM',      name: 'Stellar',               r: 19  },
-      { id: 'internet-computer',               symbol: 'ICP',      name: 'Internet Computer',     r: 20  },
-      { id: 'aptos',                            symbol: 'APT',      name: 'Aptos',                 r: 21  },
-      { id: 'hedera-hashgraph',                symbol: 'HBAR',     name: 'Hedera',                r: 22  },
-      { id: 'cosmos',                           symbol: 'ATOM',     name: 'Cosmos',                r: 24  },
-      { id: 'polygon',                          symbol: 'MATIC',    name: 'Polygon',               r: 25  },
-      { id: 'sui',                              symbol: 'SUI',      name: 'Sui',                   r: 26  },
-      { id: 'render-token',                    symbol: 'RNDR',     name: 'Render',                r: 27  },
-      { id: 'filecoin',                         symbol: 'FIL',      name: 'Filecoin',              r: 28  },
-      { id: 'arbitrum',                         symbol: 'ARB',      name: 'Arbitrum',              r: 29  },
-      { id: 'vechain',                          symbol: 'VET',      name: 'VeChain',               r: 30  },
-      { id: 'optimism',                         symbol: 'OP',       name: 'Optimism',              r: 31  },
-      { id: 'injective-protocol',              symbol: 'INJ',      name: 'Injective',             r: 32  },
-      { id: 'the-graph',                        symbol: 'GRT',      name: 'The Graph',             r: 33  },
-      { id: 'aave',                             symbol: 'AAVE',     name: 'Aave',                  r: 34  },
-      { id: 'stacks',                           symbol: 'STX',      name: 'Stacks',                r: 35  },
-      { id: 'immutable-x',                     symbol: 'IMX',      name: 'Immutable',             r: 36  },
-      { id: 'algorand',                         symbol: 'ALGO',     name: 'Algorand',              r: 37  },
-      { id: 'sei-network',                     symbol: 'SEI',      name: 'Sei',                   r: 38  },
-      { id: 'maker',                            symbol: 'MKR',      name: 'Maker',                 r: 39  },
-      { id: 'flow',                             symbol: 'FLOW',     name: 'Flow',                  r: 40  },
-      { id: 'mantle',                           symbol: 'MNT',      name: 'Mantle',                r: 41  },
-      { id: 'thorchain',                        symbol: 'RUNE',     name: 'THORChain',             r: 42  },
-      { id: 'curve-dao-token',                 symbol: 'CRV',      name: 'Curve DAO',             r: 43  },
-      { id: 'celestia',                         symbol: 'TIA',      name: 'Celestia',              r: 46  },
-      { id: 'kaspa',                            symbol: 'KAS',      name: 'Kaspa',                 r: 47  },
-      { id: 'jupiter-ag',                      symbol: 'JUP',      name: 'Jupiter',               r: 49  },
-      { id: 'pendle',                           symbol: 'PENDLE',   name: 'Pendle',                r: 50  },
-      { id: 'wormhole',                         symbol: 'W',        name: 'Wormhole',              r: 51  },
-      { id: 'ethena',                           symbol: 'ENA',      name: 'Ethena',                r: 52  },
-      { id: 'fetch-ai',                         symbol: 'FET',      name: 'Fetch.ai',              r: 55  },
-      { id: 'worldcoin-wld',                   symbol: 'WLD',      name: 'Worldcoin',             r: 56  },
-      { id: 'floki',                            symbol: 'FLOKI',    name: 'FLOKI',                 r: 57  },
-      { id: 'bonk',                             symbol: 'BONK',     name: 'Bonk',                  r: 58  },
-      { id: 'pepe',                             symbol: 'PEPE',     name: 'Pepe',                  r: 59  },
-      { id: 'jito-governance-token',           symbol: 'JTO',      name: 'Jito',                  r: 60  },
-      { id: 'notcoin',                          symbol: 'NOT',      name: 'Notcoin',               r: 61  },
-      { id: 'dogwifcoin',                       symbol: 'WIF',      name: 'dogwifhat',             r: 62  },
-      { id: 'pyth-network',                    symbol: 'PYTH',     name: 'Pyth Network',          r: 65  },
-      { id: 'virtuals-protocol',               symbol: 'VIRTUAL',  name: 'Virtuals Protocol',     r: 95  },
-      { id: 'aixbt',                            symbol: 'AIXBT',    name: 'AIXBT by Virtuals',     r: 120 },
-      { id: 'goatseus-maximus',                symbol: 'GOAT',     name: 'Goatseus Maximus',      r: 160 },
-      { id: 'ai16z',                            symbol: 'AI16Z',    name: 'ai16z',                 r: 180 },
-      { id: 'arc',                              symbol: 'ARC',      name: 'AI Rig Complex',        r: 130 },
-      { id: 'fartcoin',                         symbol: 'FARTCOIN', name: 'Fartcoin',              r: 150 },
-      { id: 'brett-based',                     symbol: 'BRETT',    name: 'Brett',                 r: 130 },
-      { id: 'zk',                               symbol: 'ZK',       name: 'ZKsync',                r: 128 },
-      { id: 'blast',                            symbol: 'BLAST',    name: 'Blast',                 r: 122 },
-      { id: 'io',                               symbol: 'IO',       name: 'io.net',                r: 118 },
-      { id: 'bome',                             symbol: 'BOME',     name: 'Book of Meme',          r: 135 },
-      { id: 'neiro-first-neiro-on-ethereum',   symbol: 'NEIRO',    name: 'Neiro',                 r: 140 },
-      { id: 'luna-2',                           symbol: 'LUNA',     name: 'Terra',                 r: 200 },
+      { id: 'bitcoin',              symbol: 'BTC',      name: 'Bitcoin',           r: 1   },
+      { id: 'ethereum',             symbol: 'ETH',      name: 'Ethereum',          r: 2   },
+      { id: 'tether',               symbol: 'USDT',     name: 'Tether',            r: 3   },
+      { id: 'binancecoin',          symbol: 'BNB',      name: 'BNB',               r: 4   },
+      { id: 'solana',               symbol: 'SOL',      name: 'Solana',            r: 5   },
+      { id: 'ripple',               symbol: 'XRP',      name: 'XRP',               r: 6   },
+      { id: 'usd-coin',             symbol: 'USDC',     name: 'USDC',              r: 7   },
+      { id: 'dogecoin',             symbol: 'DOGE',     name: 'Dogecoin',          r: 8   },
+      { id: 'cardano',              symbol: 'ADA',      name: 'Cardano',           r: 9   },
+      { id: 'tron',                 symbol: 'TRX',      name: 'TRON',              r: 10  },
+      { id: 'avalanche-2',          symbol: 'AVAX',     name: 'Avalanche',         r: 11  },
+      { id: 'shiba-inu',            symbol: 'SHIB',     name: 'Shiba Inu',         r: 12  },
+      { id: 'polkadot',             symbol: 'DOT',      name: 'Polkadot',          r: 13  },
+      { id: 'chainlink',            symbol: 'LINK',     name: 'Chainlink',         r: 14  },
+      { id: 'bitcoin-cash',         symbol: 'BCH',      name: 'Bitcoin Cash',      r: 15  },
+      { id: 'litecoin',             symbol: 'LTC',      name: 'Litecoin',          r: 16  },
+      { id: 'uniswap',              symbol: 'UNI',      name: 'Uniswap',           r: 17  },
+      { id: 'near',                 symbol: 'NEAR',     name: 'NEAR Protocol',     r: 18  },
+      { id: 'stellar',              symbol: 'XLM',      name: 'Stellar',           r: 19  },
+      { id: 'internet-computer',    symbol: 'ICP',      name: 'Internet Computer', r: 20  },
+      { id: 'aptos',                symbol: 'APT',      name: 'Aptos',             r: 21  },
+      { id: 'hedera-hashgraph',     symbol: 'HBAR',     name: 'Hedera',            r: 22  },
+      { id: 'cosmos',               symbol: 'ATOM',     name: 'Cosmos',            r: 24  },
+      { id: 'polygon',              symbol: 'MATIC',    name: 'Polygon',           r: 25  },
+      { id: 'sui',                  symbol: 'SUI',      name: 'Sui',               r: 26  },
+      { id: 'render-token',         symbol: 'RNDR',     name: 'Render',            r: 27  },
+      { id: 'filecoin',             symbol: 'FIL',      name: 'Filecoin',          r: 28  },
+      { id: 'arbitrum',             symbol: 'ARB',      name: 'Arbitrum',          r: 29  },
+      { id: 'vechain',              symbol: 'VET',      name: 'VeChain',           r: 30  },
+      { id: 'optimism',             symbol: 'OP',       name: 'Optimism',          r: 31  },
+      { id: 'injective-protocol',   symbol: 'INJ',      name: 'Injective',         r: 32  },
+      { id: 'the-graph',            symbol: 'GRT',      name: 'The Graph',         r: 33  },
+      { id: 'aave',                 symbol: 'AAVE',     name: 'Aave',              r: 34  },
+      { id: 'stacks',               symbol: 'STX',      name: 'Stacks',            r: 35  },
+      { id: 'immutable-x',          symbol: 'IMX',      name: 'Immutable',         r: 36  },
+      { id: 'algorand',             symbol: 'ALGO',     name: 'Algorand',          r: 37  },
+      { id: 'sei-network',          symbol: 'SEI',      name: 'Sei',               r: 38  },
+      { id: 'maker',                symbol: 'MKR',      name: 'Maker',             r: 39  },
+      { id: 'celestia',             symbol: 'TIA',      name: 'Celestia',          r: 46  },
+      { id: 'kaspa',                symbol: 'KAS',      name: 'Kaspa',             r: 47  },
+      { id: 'jupiter-ag',           symbol: 'JUP',      name: 'Jupiter',           r: 49  },
+      { id: 'pendle',               symbol: 'PENDLE',   name: 'Pendle',            r: 50  },
+      { id: 'ethena',               symbol: 'ENA',      name: 'Ethena',            r: 52  },
+      { id: 'virtuals-protocol',    symbol: 'VIRTUAL',  name: 'Virtuals Protocol', r: 95  },
+      { id: 'bonk',                 symbol: 'BONK',     name: 'Bonk',              r: 58  },
+      { id: 'pepe',                 symbol: 'PEPE',     name: 'Pepe',              r: 59  },
+      { id: 'dogwifcoin',           symbol: 'WIF',      name: 'dogwifhat',         r: 62  },
+      { id: 'luna-2',               symbol: 'LUNA',     name: 'Terra',             r: 200 },
     ];
 
-    /* ── VARIÁVEIS DE ESTADO ─────────────────────────────────────
-       allCoins  → lista completa (15.000+ moedas do /coins/list)
-       activeIdx → índice do item destacado ao navegar com teclado
-    */
     var allCoins  = [];
     var activeIdx = -1;
-
-    /* ── REFERÊNCIAS AOS ELEMENTOS HTML ─────────────────────────
-       Pegamos os elementos pelo id uma única vez e guardamos
-       em variáveis. É mais eficiente do que chamar
-       document.getElementById() toda vez que precisar.
-    */
     var inputEl    = document.getElementById('cryptoInput');
     var dropdownEl = document.getElementById('autocomplete-dropdown');
     var dotEl      = document.getElementById('ac-dot');
     var statusEl   = document.getElementById('ac-status-text');
     var progEl     = document.getElementById('ac-prog-fill');
 
-    /* ── FUNÇÃO: atualizar barra de status ───────────────────────
-       msg   → texto que aparece ao lado do ponto
-       state → 'loading' | 'online' | 'offline' (muda a cor do ponto)
-       pct   → porcentagem da barra de progresso (0 a 100)
-    */
+    /* Atualiza barra de status (ponto colorido + texto + barra de progresso) */
     function setStatus(msg, state, pct) {
       statusEl.textContent = msg;
       dotEl.className = 'ac-dot ' + (state || '');
       if (pct !== undefined) progEl.style.width = pct + '%';
     }
 
-    /* ── FUNÇÃO: carregar TODAS as moedas da CoinGecko ───────────
-       ESTRATÉGIA EM DUAS ETAPAS:
-
-       ETAPA 1 — /coins/list
-         Retorna TODAS as moedas cadastradas (15.000+), incluindo
-         moedas novas e sem ranking como "Hey Anon".
-         Campos: id, symbol, name (sem imagem e sem ranking).
-
-       ETAPA 2 — /coins/markets (top 250, em paralelo)
-         Retorna as 250 maiores com imagem e ranking.
-         Enriquecemos as moedas do /coins/list com esses dados:
-         quando o usuário pesquisa "bitcoin", ele aparece com foto.
-
-       Se a ETAPA 1 falhar → usa FALLBACK offline.
-       Se a ETAPA 2 falhar → busca funciona, mas sem imagens/rankings.
+    /*
+      loadCoins() — busca as moedas em duas etapas simultâneas:
+        1. /coins/list → TODAS as moedas (15k+), sem imagem/ranking
+        2. /coins/markets → top 250 com imagem e ranking
+      Enriquece a lista completa com os dados das top 250.
     */
     function loadCoins() {
       setStatus('Conectando à CoinGecko...', 'loading', 10);
 
-      /* Disparamos as duas chamadas AO MESMO TEMPO com Promise.all.
-         Isso é mais rápido do que chamar uma após a outra:
-         ambas viajam pela internet em paralelo.
-
-         Promise.allSettled → não cancela tudo se uma falhar.
-         Cada resultado tem { status: 'fulfilled'|'rejected', value }
-      */
       var urlList    = 'https://api.coingecko.com/api/v3/coins/list';
       var urlMarkets = 'https://api.coingecko.com/api/v3/coins/markets'
                      + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false';
@@ -772,335 +1157,661 @@
         fetch(urlList,    { signal: AbortSignal.timeout(12000) }).then(function(r){ return r.json(); }),
         fetch(urlMarkets, { signal: AbortSignal.timeout(8000)  }).then(function(r){ return r.json(); })
       ]).then(function (results) {
+        var listResult    = results[0];
+        var marketsResult = results[1];
 
-        var listResult    = results[0];  /* /coins/list */
-        var marketsResult = results[1];  /* /coins/markets */
-
-        /* ── Etapa 1: lista completa ─────────────────────────── */
         if (listResult.status === 'fulfilled' && Array.isArray(listResult.value)) {
-
           setStatus('Processando lista...', 'loading', 60);
 
-          /* Mapeamos o /coins/list para nosso formato interno.
-             Começamos sem imagem e sem ranking — serão adicionados
-             abaixo se o /coins/markets também tiver respondido. */
           allCoins = listResult.value.map(function (c) {
-            return {
-              id:     c.id,
-              symbol: (c.symbol || '').toUpperCase(),
-              name:   c.name || c.id,
-              image:  null,
-              r:      null
-            };
+            return { id: c.id, symbol: (c.symbol || '').toUpperCase(), name: c.name || c.id, image: null, r: null };
           });
 
-          /* ── Etapa 2: enriquecer com imagens e rankings ─────── */
           if (marketsResult.status === 'fulfilled' && Array.isArray(marketsResult.value)) {
-
-            /* Criamos um mapa id→dados para lookup em O(1).
-               Muito mais rápido do que usar .find() dentro de um loop. */
             var enrichMap = {};
             marketsResult.value.forEach(function (m) {
               enrichMap[m.id] = { image: m.image, r: m.market_cap_rank };
             });
-
-            /* Percorremos apenas as top 250 do enrichMap (não os 15k)
-               e atualizamos os objetos correspondentes em allCoins. */
             allCoins.forEach(function (c) {
-              if (enrichMap[c.id]) {
-                c.image = enrichMap[c.id].image;
-                c.r     = enrichMap[c.id].r;
-              }
+              if (enrichMap[c.id]) { c.image = enrichMap[c.id].image; c.r = enrichMap[c.id].r; }
             });
           }
 
           setStatus(allCoins.length.toLocaleString('pt-BR') + ' moedas prontas', 'online', 100);
-
         } else {
-          /* /coins/list falhou → modo offline com lista manual */
           allCoins = FALLBACK;
           setStatus('Offline · ' + FALLBACK.length + ' moedas disponíveis', 'offline', 100);
         }
 
-        /* Esconde a barra de progresso após 1.5s em qualquer caso */
         setTimeout(function () { progEl.style.width = '0%'; }, 1500);
       });
     }
 
-    /* ── FUNÇÃO: busca com pontuação de relevância ───────────────
-       Problema anterior: "ethereum" mostrava "Baby Ethereum" antes
-       do próprio Ethereum, e "sol" não encontrava Solana no topo.
-
-       Solução: cada moeda recebe uma PONTUAÇÃO (score).
-       Quanto maior o score, mais relevante — aparece primeiro.
-
-       TABELA DE PONTUAÇÃO:
-       ┌─────────────────────────────────────────┬───────┐
-       │ Critério                                │ Score │
-       ├─────────────────────────────────────────┼───────┤
-       │ Símbolo exato (SOL == SOL)              │  100  │
-       │ ID exato (solana == solana)             │   90  │
-       │ Nome exato (Solana == Solana)           │   80  │
-       │ Símbolo começa com (SOL em SOLX)        │   60  │
-       │ ID começa com (solana em solana-2)      │   50  │
-       │ Nome começa com (Solana em Solana...)   │   40  │
-       │ Símbolo contém (SOL em WSOL)            │   20  │
-       │ ID contém (sol em absolute)             │   10  │
-       │ Nome contém (sol em Absolute)           │    5  │
-       └─────────────────────────────────────────┴───────┘
-
-       DESEMPATE: quando dois resultados têm o mesmo score,
-       a moeda com menor ranking de mercado (r=1 é Bitcoin)
-       aparece primeiro. Moedas sem ranking ficam por último.
-
-       RESULTADO: digitar "sol" → Solana (#5) aparece primeiro.
-                  digitar "ethereum" → Ethereum (#2) aparece primeiro.
+    /*
+      search() — pontua e ordena os resultados por relevância.
+      Bônus de ranking para moedas famosas (BTC, ETH, SOL...) aparecerem primeiro.
     */
     function search(query) {
       if (!query || query.length < 1) return [];
-
-      var q    = query.toLowerCase();
-      var qUP  = query.toUpperCase();  /* para comparar com símbolo */
-
-      var scored = [];
+      var q = query.toLowerCase(), qUP = query.toUpperCase(), scored = [];
 
       for (var i = 0; i < allCoins.length; i++) {
-        var c      = allCoins[i];
-        var sym    = c.symbol;                    /* já em maiúsculas */
-        var name   = c.name.toLowerCase();
-        var id     = c.id.toLowerCase();
-        var score  = 0;
+        var c = allCoins[i], sym = c.symbol, name = c.name.toLowerCase(), id = c.id.toLowerCase(), score = 0;
 
-        /* ── Correspondências exatas (maior prioridade) ───────── */
-        if (sym === qUP)   score = Math.max(score, 100);
-        if (id  === q)     score = Math.max(score, 90);
-        if (name === q)    score = Math.max(score, 80);
-
-        /* ── Começa com (segunda prioridade) ─────────────────── */
+        if (sym === qUP)          score = Math.max(score, 100);
+        if (id  === q)            score = Math.max(score, 90);
+        if (name === q)           score = Math.max(score, 80);
         if (score === 0) {
           if (sym.startsWith(qUP))  score = Math.max(score, 60);
           if (id.startsWith(q))     score = Math.max(score, 50);
           if (name.startsWith(q))   score = Math.max(score, 40);
         }
-
-        /* ── Contém em qualquer posição (terceira prioridade) ─── */
         if (score === 0) {
           if (sym.includes(qUP))   score = Math.max(score, 20);
           if (id.includes(q))      score = Math.max(score, 10);
           if (name.includes(q))    score = Math.max(score, 5);
         }
-
-        /* ── Bônus de ranking de mercado ─────────────────────────
-           Coins com # recebem pontos extras para subir na lista.
-           Quanto menor o ranking (mais famosa a moeda), maior o bônus.
-           Isso garante que ETH, BTC, SOL apareçam na frente de tokens
-           obscuros que possam ter match igual ou maior no texto.
-        */
+        /* Bônus de ranking: moedas conhecidas sobem na lista */
         if (score > 0 && c.r) {
           if      (c.r <= 20)  score += 50;
           else if (c.r <= 100) score += 35;
           else if (c.r <= 500) score += 20;
           else                 score += 10;
         }
-
-        /* Só inclui na lista se teve alguma correspondência */
-        if (score > 0) {
-          scored.push({ coin: c, score: score });
-        }
+        if (score > 0) scored.push({ coin: c, score: score });
       }
 
-      /* Ordena por score (desc) e depois por ranking de mercado (asc).
-         r=null (sem ranking) vai para o final usando Infinity. */
       scored.sort(function (a, b) {
         if (b.score !== a.score) return b.score - a.score;
-        var ra = a.coin.r || Infinity;
-        var rb = b.coin.r || Infinity;
-        return ra - rb;
+        return (a.coin.r || Infinity) - (b.coin.r || Infinity);
       });
-
-      /* Retorna apenas os objetos de moeda, limitado a 10 resultados */
       return scored.slice(0, 10).map(function (s) { return s.coin; });
     }
 
-    /* ── FUNÇÃO: posicionar o dropdown na tela ───────────────────
-       Como o dropdown fica FORA do .search-wrap, precisamos
-       calcular manualmente onde ele deve aparecer.
-
-       getBoundingClientRect() → retorna a posição e tamanho
-       de um elemento em relação à janela visível do navegador.
-
-       Usamos position: fixed (relativo à janela) porque o hero
-       pode ter transforms ou overflow que quebrariam o absolute.
-
-       Resultado: o dropdown sempre aparece colado abaixo da barra,
-       com a mesma largura, independente do scroll ou zoom.
-    */
+    /* Recalcula posição do dropdown baseado na posição atual do input na tela */
     function positionDropdown() {
       var rect = inputEl.closest('.search-wrap').getBoundingClientRect();
-      dropdownEl.style.top    = (rect.bottom + 8) + 'px';
-      dropdownEl.style.left   = rect.left + 'px';
-      dropdownEl.style.width  = rect.width + 'px';
+      dropdownEl.style.top   = (rect.bottom + 8) + 'px';
+      dropdownEl.style.left  = rect.left + 'px';
+      dropdownEl.style.width = rect.width + 'px';
     }
 
-    /* ── FUNÇÃO: renderizar os itens no dropdown ──────────────────
-       Gera o HTML de cada item da lista e injeta no dropdown.
-       Adiciona eventos de clique em cada item gerado.
-    */
+    /* Gera o HTML do dropdown e injeta os listeners de clique */
     function renderDropdown(results, query) {
-      activeIdx = -1; /* reseta navegação por teclado */
-
-      /* Se não tem texto digitado, esconde o dropdown */
-      if (!query) {
-        dropdownEl.innerHTML = '';
-        dropdownEl.classList.remove('open');
-        return;
-      }
-
-      /* Posiciona o dropdown antes de exibir */
+      activeIdx = -1;
+      if (!query) { dropdownEl.innerHTML = ''; dropdownEl.classList.remove('open'); return; }
       positionDropdown();
-
-      /* Se não achou nada, mostra mensagem amigável */
       if (!results.length) {
         dropdownEl.innerHTML = '<div class="ac-empty">Nenhuma moeda encontrada para "' + query + '"</div>';
-        dropdownEl.classList.add('open');
-        return;
+        dropdownEl.classList.add('open'); return;
       }
-
-      /* Gera o HTML de cada resultado.
-         Para cada moeda, cria um .ac-item com:
-           → ícone (imagem ou placeholder com iniciais)
-           → nome completo + símbolo
-           → ranking (#1, #2...) alinhado à direita
-      */
       dropdownEl.innerHTML = results.map(function (c, i) {
         var initials = c.symbol.substring(0, 3);
-
-        /*
-          onerror no <img>: se a imagem falhar ao carregar,
-          substitui o elemento <img> pelo placeholder .ac-ph
-        */
         var icon = c.image
           ? '<img class="ac-img" src="' + c.image + '" onerror="this.outerHTML=\'<div class=ac-ph>' + initials + '</div>\'" />'
           : '<div class="ac-ph">' + initials + '</div>';
-
         var rank = c.r ? '<span class="ac-rank">#' + c.r + '</span>' : '';
-
-        return '<div class="ac-item" data-i="' + i + '">'
-          + icon
-          + '<span>'
-          +   '<span class="ac-name">' + c.name + '</span>'
-          +   '<span class="ac-symbol">' + c.symbol + '</span>'
-          + '</span>'
-          + rank
-          + '</div>';
+        return '<div class="ac-item" data-i="' + i + '">' + icon
+          + '<span><span class="ac-name">' + c.name + '</span><span class="ac-symbol">' + c.symbol + '</span></span>'
+          + rank + '</div>';
       }).join('');
-
       dropdownEl.classList.add('open');
-
-      /* Adiciona clique em cada item gerado */
       dropdownEl.querySelectorAll('.ac-item').forEach(function (el, i) {
-        el.addEventListener('mousedown', function (e) {
-          e.preventDefault(); /* evita que o input perca o foco antes do clique */
-          selectCoin(results[i]);
-        });
+        el.addEventListener('mousedown', function (e) { e.preventDefault(); selectCoin(results[i]); });
       });
     }
 
-    /* ── FUNÇÃO: selecionar uma moeda ────────────────────────────
-       Preenche o campo com o ID da moeda (que é o que o main.js
-       usa para chamar a API do CoinGecko) e fecha o dropdown.
+    /*
+      selectCoin() — preenche o input com o id da moeda e fecha o dropdown.
+      O id é o que a CoinGecko usa como parâmetro na URL (/coins/{id}).
     */
     function selectCoin(coin) {
-      inputEl.value = coin.id;   /* IMPORTANTE: usa o id, não o name */
+      inputEl.value = coin.id;
       dropdownEl.innerHTML = '';
       dropdownEl.classList.remove('open');
     }
 
-    /* ── EVENTOS DO CAMPO DE TEXTO ────────────────────────────────
-
-       'input' → dispara a cada tecla digitada
-       Filtra a lista e atualiza o dropdown em tempo real.
-    */
-    inputEl.addEventListener('input', function () {
-      var q = inputEl.value.trim();
-      renderDropdown(search(q), q);
-    });
-
-    /*
-       'keydown' → navegação por teclado:
-         ↓ ArrowDown → desce na lista
-         ↑ ArrowUp   → sobe na lista
-         Enter       → seleciona o item destacado
-         Escape      → fecha o dropdown sem selecionar
-    */
+    /* Eventos do campo de texto */
+    inputEl.addEventListener('input',  function () { renderDropdown(search(inputEl.value.trim()), inputEl.value.trim()); });
+    inputEl.addEventListener('blur',   function () { setTimeout(function () { dropdownEl.classList.remove('open'); }, 150); });
+    inputEl.addEventListener('focus',  function () { var q=inputEl.value.trim(); if(q) renderDropdown(search(q), q); });
     inputEl.addEventListener('keydown', function (e) {
-      var items = dropdownEl.querySelectorAll('.ac-item');
-      if (!items.length) return;
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        activeIdx = Math.min(activeIdx + 1, items.length - 1);
-        items.forEach(function (el, i) { el.classList.toggle('active', i === activeIdx); });
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        activeIdx = Math.max(activeIdx - 1, 0);
-        items.forEach(function (el, i) { el.classList.toggle('active', i === activeIdx); });
-      }
-      if (e.key === 'Enter' && activeIdx >= 0) {
-        var results = search(inputEl.value.trim());
-        if (results[activeIdx]) selectCoin(results[activeIdx]);
-      }
-      if (e.key === 'Escape') {
-        dropdownEl.classList.remove('open');
-      }
+      var items = dropdownEl.querySelectorAll('.ac-item'); if (!items.length) return;
+      if (e.key==='ArrowDown') { e.preventDefault(); activeIdx=Math.min(activeIdx+1,items.length-1); items.forEach(function(el,i){el.classList.toggle('active',i===activeIdx);}); }
+      if (e.key==='ArrowUp')   { e.preventDefault(); activeIdx=Math.max(activeIdx-1,0); items.forEach(function(el,i){el.classList.toggle('active',i===activeIdx);}); }
+      if (e.key==='Enter' && activeIdx>=0) { var r=search(inputEl.value.trim()); if(r[activeIdx]) selectCoin(r[activeIdx]); }
+      if (e.key==='Escape') dropdownEl.classList.remove('open');
     });
 
-    /*
-       'blur' → quando o input perde o foco (usuário clicou em outro lugar)
-       Fecha o dropdown com um pequeno delay (150ms) para
-       permitir que o evento 'mousedown' do item seja processado primeiro.
-    */
-    inputEl.addEventListener('blur', function () {
-      setTimeout(function () { dropdownEl.classList.remove('open'); }, 150);
-    });
-
-    /*
-       'focus' → quando o input recebe o foco novamente
-       Se já havia texto, reabre o dropdown.
-    */
-    inputEl.addEventListener('focus', function () {
-      var q = inputEl.value.trim();
-      if (q) renderDropdown(search(q), q);
-    });
-
-    /* ── INICIALIZAÇÃO ────────────────────────────────────────────
-       Chama loadCoins() assim que a página terminar de carregar.
-       Isso já inicia a busca das moedas em background enquanto
-       o usuário lê a página.
-
-       O listener de resize/scroll reposiciona o dropdown caso
-       o usuário redimensione a janela ou role a página enquanto
-       ele estiver aberto.
-    */
-    window.addEventListener('resize', function () {
-      if (dropdownEl.classList.contains('open')) positionDropdown();
-    });
-    window.addEventListener('scroll', function () {
-      if (dropdownEl.classList.contains('open')) positionDropdown();
-    }, true);
+    window.addEventListener('resize', function () { if (dropdownEl.classList.contains('open')) positionDropdown(); });
+    window.addEventListener('scroll', function () { if (dropdownEl.classList.contains('open')) positionDropdown(); }, true);
 
     loadCoins();
-
-  })(); /* O () no final executa a função imediatamente (IIFE).
-           Isso evita que as variáveis internas "vazem" para o
-           escopo global e conflitem com o main.js ou outros scripts. */
+  })();
   </script>
-  <!-- FIM AUTOCOMPLETE -->
 
-  <!-- 6. Controlador principal — orquestra tudo.
-          Carregado POR ÚLTIMO porque depende de todos os anteriores. -->
-  <script src="js/main.js"></script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       6. BUSCA + RESULTADO — lógica principal integrada
+
+       Este bloco cuida de:
+         A) Escutar o clique em "Analisar" e os chips de atalho
+         B) Buscar dados na CoinGecko API e DeFiLlama em paralelo
+         C) Montar o objeto de dados e chamar renderResult()
+         D) Controlar a transição entre home e resultado
+         E) Renderizar todos os cards do resultado
+         F) Animar o gráfico circular (gauge)
+         G) Gerenciar o combobox de contratos
+
+       PARA PERSONALIZAR:
+         • Mudar cores do gauge → veja getCategory() abaixo
+         • Adicionar nova métrica → veja renderResult() + HTML acima
+         • Mudar links sociais → veja buildLinks() abaixo
+         • Ajustar timeout da API → veja fetchCoinData() abaixo
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+
+  /* ════════════════════════════════════════════════════════════════
+     UTILITÁRIOS DE FORMATAÇÃO
+     Funções puras — não dependem do DOM, só recebem números e
+     retornam strings formatadas.
+     ════════════════════════════════════════════════════════════════ */
+
+  /*
+    fmtUSD() — formata um número em dólares com sufixo legível.
+    Exemplos:
+      1500000000  → "US$ 1.50 B"
+      250000000   → "US$ 250.00 M"
+      0.000045    → "US$ 0.0000"
+    Para mudar o número de casas decimais, altere .toFixed(N).
+  */
+  function fmtUSD(n) {
+    if (n == null || n === undefined) return '—';
+    if (n >= 1e12) return 'US$ ' + (n / 1e12).toFixed(2) + ' T';
+    if (n >= 1e9)  return 'US$ ' + (n / 1e9).toFixed(2)  + ' B';
+    if (n >= 1e6)  return 'US$ ' + (n / 1e6).toFixed(2)  + ' M';
+    if (n >= 1e3)  return 'US$ ' + (n / 1e3).toFixed(2)  + ' K';
+    return 'US$ ' + n.toFixed(4);
+  }
+
+  /*
+    fmtNum() — formata supply (sem o "US$").
+    Exemplos: 572140000 → "572.14 M"
+  */
+  function fmtNum(n) {
+    if (!n) return '—';
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + ' B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + ' M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + ' K';
+    return n.toFixed(0);
+  }
+
+  /* setText() — atalho para preencher um elemento por id */
+  function setText(id, v) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = (v !== null && v !== undefined) ? v : '—';
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     CATEGORIAS DE MARKET CAP
+     getCategory() devolve { name, id, color } para o gauge.
+
+     Para mudar os limites de cada categoria, altere os valores abaixo:
+       300e9 → 300 bilhões (Big Player)
+        10e9 → 10 bilhões  (Blue Chip)
+         1e9 → 1 bilhão    (Média)
+       150e6 → 150 milhões (Pequena)
+       abaixo de 150M      (Gema)
+     ════════════════════════════════════════════════════════════════ */
+  function getCategory(mcap) {
+    if (mcap >= 300e9) return { name: 'Big Player', id: 'bigplayer', color: '#fbbf24' }; /* amarelo */
+    if (mcap >=  10e9) return { name: 'Blue Chip',  id: 'bluechip',  color: '#a78bfa' }; /* roxo    */
+    if (mcap >=   1e9) return { name: 'Média',      id: 'media',     color: '#38bdf8' }; /* azul    */
+    if (mcap >= 150e6) return { name: 'Pequena',    id: 'pequena',   color: '#34d399' }; /* verde   */
+    return                    { name: 'Gema',       id: 'gema',      color: '#64748b' }; /* cinza   */
+  }
+
+  /*
+    gaugePct() — converte o Market Cap em % para o arco do gauge.
+    Usa escala por faixas (não linear) para que todas as categorias
+    sejam visualmente distinguíveis mesmo com faixas muito diferentes.
+
+    Mapeamento:
+      0        →  0%
+      150M     → 15%
+      1B       → 30%
+      10B      → 50%
+      300B     → 100%
+  */
+  function gaugePct(mcap) {
+    if (mcap >= 300e9) return 100;
+    if (mcap >=  10e9) return 50 + (mcap -  10e9) / (300e9 -  10e9) * 50;
+    if (mcap >=   1e9) return 30 + (mcap -   1e9) / ( 10e9 -   1e9) * 20;
+    if (mcap >= 150e6) return 15 + (mcap - 150e6) / (  1e9 - 150e6) * 15;
+    return (mcap / 150e6) * 15;
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     GAUGE — anima o círculo SVG
+     Chamado com o Market Cap em USD (número puro, sem formatação).
+     ════════════════════════════════════════════════════════════════ */
+  function animateGauge(mcap) {
+    var cat  = getCategory(mcap);
+    var pct  = gaugePct(mcap);
+    var circ = 2 * Math.PI * 72; /* circunferência: 2 × π × r (r=72) ≈ 452.4 */
+    var offset = circ - (circ * pct / 100);
+
+    /* Destaca o estágio ativo na lista abaixo do círculo */
+    ['gema', 'pequena', 'media', 'bluechip', 'bigplayer'].forEach(function (s) {
+      var el = document.getElementById('st-' + s);
+      if (el) el.classList.toggle('active', s === cat.id);
+    });
+
+    /* Muda a cor do arco conforme a categoria */
+    document.getElementById('gauge-arc').setAttribute('stroke', cat.color);
+
+    /* Texto dentro do círculo */
+    document.getElementById('g-cat').textContent  = cat.name;
+    document.getElementById('g-mcap').textContent = fmtUSD(mcap);
+
+    /* Reseta o arco e anima para o valor correto após 120ms
+       (o setTimeout garante que o reset apareça antes da animação) */
+    document.getElementById('gauge-arc').style.strokeDashoffset = circ;
+    setTimeout(function () {
+      document.getElementById('gauge-arc').style.strokeDashoffset = offset;
+    }, 120);
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     CONTRATOS — combobox
+     ════════════════════════════════════════════════════════════════ */
+  var _contracts = []; /* guarda os contratos da moeda atual */
+
+  /*
+    buildContracts() — preenche o combobox com as redes disponíveis.
+    Recebe uma lista: [ { network: 'ethereum', address: '0x123...' }, ... ]
+    Se não houver contratos, exibe "Layer 1 / Nativo".
+  */
+  function buildContracts(list) {
+    _contracts = list || [];
+    var sel = document.getElementById('contract-select');
+    sel.innerHTML = '';
+
+    if (!_contracts.length) {
+      /* Moeda sem contratos ERC-20 (ex: Bitcoin, Solana nativos) */
+      _contracts = [{ network: 'Layer 1 / Nativo', address: 'Blockchain própria — sem contrato em outras redes' }];
+    }
+
+    _contracts.forEach(function (c, i) {
+      var opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = c.network;
+      sel.appendChild(opt);
+    });
+    showContract(0);
+  }
+
+  /* Exibe o endereço da rede selecionada no combobox */
+  function showContract(idx) {
+    var c = _contracts[idx]; if (!c) return;
+    document.getElementById('contract-net').textContent  = c.network.toUpperCase();
+    document.getElementById('contract-addr').textContent = c.address;
+  }
+
+  /* Copia o endereço atual para o clipboard. Botão vira "✓" por 1.5s */
+  function copyAddr() {
+    var v = document.getElementById('contract-addr').textContent;
+    if (v && v !== '—') {
+      navigator.clipboard.writeText(v).then(function () {
+        var btn = document.querySelector('.copy-btn');
+        var old = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(function () { btn.textContent = old; }, 1500);
+      });
+    }
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     LINKS SOCIAIS
+     buildLinks() — gera os badges/links na linha abaixo do nome.
+     Para adicionar uma nova rede social, copie o padrão do array links[].
+     ════════════════════════════════════════════════════════════════ */
+  function buildLinks(d) {
+    var wrap = document.getElementById('hero-links');
+    wrap.innerHTML = '';
+
+    /* Símbolo — badge sem link */
+    var sym = document.createElement('span');
+    sym.className = 'hero-link';
+    sym.style.fontFamily = "'JetBrains Mono', monospace";
+    sym.style.color = '#fff';
+    sym.style.borderColor = 'var(--res-border-h)';
+    sym.textContent = d.symbol;
+    wrap.appendChild(sym);
+
+    /* Ranking de mercado — badge sem link */
+    var rk = document.createElement('span');
+    rk.className = 'hero-link';
+    rk.style.color = 'var(--res-violet)';
+    rk.style.fontWeight = '700';
+    rk.textContent = '#' + d.rank;
+    wrap.appendChild(rk);
+
+    /*
+      Links clicáveis — adicione/remova itens aqui.
+      url: null → o badge não aparece (evita links quebrados)
+    */
+    var links = [
+      { url: d.website,  label: 'Website',    icon: '🌐' },
+      { url: d.twitter,  label: 'Twitter / X', icon: '𝕏'  },
+      { url: d.telegram, label: 'Telegram',   icon: '✈️'  },
+      { url: d.discord,  label: 'Discord',    icon: '💬'  },
+      { url: d.github,   label: 'GitHub',     icon: '🐙'  },
+    ];
+
+    links.forEach(function (l) {
+      if (!l.url) return; /* pula links que não existem */
+      var a = document.createElement('a');
+      a.href = l.url; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'hero-link';
+      a.textContent = l.icon + ' ' + l.label;
+      wrap.appendChild(a);
+    });
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     RENDER PRINCIPAL
+     renderResult(d) — recebe o objeto de dados e preenche todos os
+     elementos do #page-result.
+
+     O objeto d deve ter a estrutura:
+     {
+       name, symbol, rank, image,
+       price, priceChange24h,
+       marketCap, fdv,
+       volume24h, volumePct, volume7d,
+       circulatingSupply, totalSupply, pctFree, pctLocked,
+       tvl,
+       website, twitter, telegram, discord, github,
+       contracts: [ { network, address }, ... ]
+     }
+     ════════════════════════════════════════════════════════════════ */
+  function renderResult(d) {
+    /* Data e hora de atualização */
+    var now = new Date();
+    document.getElementById('update-time').textContent =
+      now.toLocaleDateString('pt-BR') + ', ' + now.toLocaleTimeString('pt-BR');
+
+    /* Logo e nome da moeda */
+    document.getElementById('hero-logo').src = d.image || '';
+    setText('hero-title', d.name);
+
+    /* Links sociais e badges */
+    buildLinks(d);
+
+    /* ── Estatísticas ── */
+    var chg = d.priceChange24h || 0;
+    setText('s-price', fmtUSD(d.price));
+    /* Variação 24h — fica verde se positivo, vermelho se negativo */
+    var chgEl = document.getElementById('s-chg');
+    chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '% (24h)';
+    chgEl.style.color = chg >= 0 ? '#34d399' : '#f87171';
+
+    setText('s-mcap',      fmtUSD(d.marketCap));
+    setText('s-mcap-rank', 'Ranking #' + d.rank);
+    setText('s-fdv',       fmtUSD(d.fdv));
+    setText('s-vol',       fmtUSD(d.volume24h));
+    document.getElementById('s-vol-pct').textContent =
+      d.volumePct ? d.volumePct.toFixed(2) + '% do MCap' : '—';
+    setText('s-supply', fmtNum(d.circulatingSupply));
+    document.getElementById('s-supply-pct').textContent =
+      d.pctFree ? d.pctFree.toFixed(1) + '% do total' : '—';
+    setText('s-total',  fmtNum(d.totalSupply));
+    setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)   + '%' : '—');
+    setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2) + '%' : '—');
+    setText('s-vol7',   d.volume7d ? fmtUSD(d.volume7d) : '—');
+    setText('s-tvl',    d.tvl      ? fmtUSD(d.tvl) : 'TVL não disponível');
+
+    /* ── Contratos ── */
+    buildContracts(d.contracts);
+
+    /* ── Gauge ── */
+    animateGauge(d.marketCap);
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     CONTROLE DE TELAS
+     showLoading() → exibe spinner
+     showResult()  → esconde home, esconde spinner, exibe resultado
+     goBack()      → volta para a home (chamado pelo botão "← Nova Pesquisa")
+     ════════════════════════════════════════════════════════════════ */
+  function showLoading(coinName) {
+    document.getElementById('loading-coin-name').textContent =
+      coinName ? 'Buscando ' + coinName + '...' : 'Buscando dados...';
+    document.getElementById('loading-screen').classList.add('active');
+  }
+
+  function hideLoading() {
+    document.getElementById('loading-screen').classList.remove('active');
+  }
+
+  function showResult() {
+    document.getElementById('page-search').style.display = 'none';
+    document.getElementById('page-result').style.display = 'block';
+    hideLoading();
+    /* Volta para o topo da página */
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* goBack() — declarado globalmente para o onclick do botão funcionar */
+  function goBack() {
+    document.getElementById('page-result').style.display = 'none';
+    document.getElementById('page-search').style.display = 'block';
+    /* Limpa o campo de busca para nova pesquisa */
+    document.getElementById('cryptoInput').value = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* showError() — exibe uma mensagem de erro amigável no lugar dos cards */
+  function showError(coinId, msg) {
+    hideLoading();
+    alert('Erro ao buscar "' + coinId + '":\n' + msg + '\n\nVerifique o ID e tente novamente.\nSe receber erro 429, aguarde ~30 segundos (limite da API gratuita).');
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     BUSCA NA API
+     fetchCoinData() — busca dados de uma moeda em duas APIs
+     simultaneamente (CoinGecko + DeFiLlama) e chama renderResult().
+
+     URL da CoinGecko:
+       https://api.coingecko.com/api/v3/coins/{id}
+       Parâmetros: market_data=true → preço, volume, supply, etc.
+                   community_data=true → links de redes sociais
+
+     URL da DeFiLlama:
+       https://api.llama.fi/tvl/{id}
+       Retorna: um número (o TVL em USD) ou 404 se não existir
+
+     Para adicionar uma nova fonte de dados, adicione outra chamada
+     no Promise.allSettled() e processe o resultado abaixo.
+     ════════════════════════════════════════════════════════════════ */
+  function fetchCoinData(coinId) {
+    /* Mostra spinner com o nome da moeda (ou o id se ainda não temos o nome) */
+    showLoading(coinId);
+
+    var urlCG = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
+              + '?localization=false&tickers=false&market_data=true'
+              + '&community_data=true&developer_data=false&sparkline=false';
+
+    var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
+
+    /*
+      Promise.allSettled → roda as duas chamadas em PARALELO.
+      Mesmo que DeFiLlama falhe (moeda sem TVL), CoinGecko ainda funciona.
+      Cada resultado tem: { status: 'fulfilled'|'rejected', value|reason }
+    */
+    Promise.allSettled([
+      fetch(urlCG,    { signal: AbortSignal.timeout(15000) }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }),
+      fetch(urlLlama, { signal: AbortSignal.timeout(8000) }).then(function (r) {
+        if (!r.ok) throw new Error('sem TVL');
+        return r.json();
+      })
+    ]).then(function (results) {
+      var cgResult    = results[0]; /* CoinGecko */
+      var llamaResult = results[1]; /* DeFiLlama */
+
+      /* Se CoinGecko falhou, não há nada a mostrar */
+      if (cgResult.status === 'rejected') {
+        showError(coinId, cgResult.reason.message || 'Falha na API');
+        return;
+      }
+
+      var data = cgResult.value;
+
+      /* Verifica se a resposta é um erro da CoinGecko (ex: moeda não encontrada) */
+      if (data.error) {
+        showError(coinId, data.error);
+        return;
+      }
+
+      var md = data.market_data || {}; /* market_data — shortcut */
+      var links = data.links || {};    /* links — shortcut */
+
+      /*
+        Monta o objeto de contratos a partir de data.platforms.
+        data.platforms = { "ethereum": "0x123...", "polygon-pos": "0xabc...", ... }
+        Filtra entradas vazias e ordena alfabeticamente.
+      */
+      var contracts = Object.entries(data.platforms || {})
+        .filter(function (pair) { return pair[1] && pair[1].trim(); })
+        .sort(function (a, b) { return a[0].localeCompare(b[0]); })
+        .map(function (pair) { return { network: pair[0], address: pair[1] }; });
+
+      /*
+        Constrói os links sociais a partir dos dados da CoinGecko.
+        twitter_screen_name → apenas o handle, ex: "solana" → URL completa
+        telegram_channel_identifier → handle do canal, ex: "solana"
+        chat_url → array com URLs de Discord, etc.
+      */
+      var twitterHandle   = links.twitter_screen_name;
+      var telegramHandle  = links.telegram_channel_identifier;
+      var discordUrl      = (links.chat_url || []).find(function (u) { return u && u.includes('discord'); });
+      var githubUrl       = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
+
+      /* TVL da DeFiLlama — pode ser null se a moeda não tem protocolo DeFi */
+      var tvlValue = null;
+      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
+        tvlValue = llamaResult.value;
+      }
+
+      /* Calcula % liberado e % bloqueado (circ / total) */
+      var circ  = md.circulating_supply  || null;
+      var total = md.total_supply        || null;
+      var pctFree   = (circ && total) ? (circ / total * 100) : null;
+      var pctLocked = pctFree != null ? (100 - pctFree) : null;
+
+      /* Objeto final — passado para renderResult() */
+      var coinData = {
+        name:   data.name,
+        symbol: (data.symbol || '').toUpperCase(),
+        rank:   data.market_cap_rank || '—',
+        image:  data.image ? (data.image.large || data.image.small || '') : '',
+
+        price:           md.current_price ? (md.current_price.usd || 0) : 0,
+        priceChange24h:  md.price_change_percentage_24h || 0,
+
+        marketCap: md.market_cap ? (md.market_cap.usd || 0) : 0,
+        fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
+
+        volume24h:  md.total_volume ? (md.total_volume.usd || 0) : 0,
+        /* volumePct = volume / marketCap × 100 */
+        volumePct: (md.total_volume && md.market_cap && md.market_cap.usd)
+                   ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
+        volume7d: null, /* CoinGecko free tier não fornece volume 7D */
+
+        circulatingSupply: circ,
+        totalSupply:       total,
+        pctFree:           pctFree,
+        pctLocked:         pctLocked,
+
+        tvl: tvlValue,
+
+        /* Links */
+        website:  links.homepage ? (links.homepage[0] || null) : null,
+        twitter:  twitterHandle  ? 'https://twitter.com/' + twitterHandle : null,
+        telegram: telegramHandle ? 'https://t.me/' + telegramHandle : null,
+        discord:  discordUrl     || null,
+        github:   githubUrl      || null,
+
+        contracts: contracts
+      };
+
+      /* Preenche todos os cards e mostra a página de resultado */
+      renderResult(coinData);
+      showResult();
+    });
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     DISPARO DA BUSCA
+     triggerSearch() — valida o input e chama fetchCoinData().
+     Chamada pelo clique no botão "Analisar" e pelos chips de atalho.
+     ════════════════════════════════════════════════════════════════ */
+  function triggerSearch(coinId) {
+    /* Remove espaços e converte para minúsculas (padrão CoinGecko) */
+    var id = (coinId || document.getElementById('cryptoInput').value).trim().toLowerCase();
+
+    if (!id) {
+      /* Campo vazio — pisca o input para indicar o erro */
+      var inp = document.getElementById('cryptoInput');
+      inp.style.outline = '2px solid #f87171';
+      setTimeout(function () { inp.style.outline = ''; }, 1200);
+      return;
+    }
+
+    fetchCoinData(id);
+  }
+
+  /* ── Listener do botão "Analisar" ── */
+  document.getElementById('btnSearch').addEventListener('click', function () {
+    triggerSearch();
+  });
+
+  /* ── Enter no campo de busca também dispara (quando nenhum item do dropdown está ativo) ── */
+  document.getElementById('cryptoInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      /* Pequeno delay para o autocomplete processar a seleção primeiro */
+      setTimeout(function () { triggerSearch(); }, 80);
+    }
+  });
+
+  /*
+    ── Chips de atalho rápido ──
+    Cada chip tem data-id com o ID exato da CoinGecko.
+    Ao clicar: preenche o input E dispara a busca imediatamente.
+  */
+  document.querySelectorAll('.chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      var id = chip.getAttribute('data-id');
+      if (id) {
+        document.getElementById('cryptoInput').value = id;
+        triggerSearch(id);
+      }
+    });
+  });
+
+  </script>
 
 </body>
 </html>
