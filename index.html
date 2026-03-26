@@ -282,6 +282,42 @@
     }
     .res-update-info a { color: var(--res-violet); text-decoration: none; }
 
+    /*
+      Botão de refresh — discreto, integrado à barra de topo.
+      Mostra o ícone ↻ + contador regressivo (ex: "2:47").
+      Ao clicar, o ícone gira 360° e a busca é refeita.
+    */
+    .btn-refresh {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--res-violet-soft);
+      border: 1px solid var(--res-border);
+      border-radius: 999px;
+      padding: 3px 12px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px; font-weight: 600;
+      color: var(--res-text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-refresh:hover {
+      border-color: var(--res-violet);
+      color: #fff;
+      background: rgba(108,92,231,0.22);
+    }
+    /* Ícone ↻ — gira quando o refresh está em andamento */
+    .btn-refresh-icon {
+      font-size: 13px;
+      display: inline-block;
+      transition: transform 0.4s ease;
+    }
+    .btn-refresh-icon.spinning {
+      animation: spin-once 0.7s linear;
+    }
+    @keyframes spin-once {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
     /* ══════════════════════════════════════════════════════════════
        CABEÇALHO DA MOEDA (Hero do resultado)
        Contém: logo circular + nome com gradiente + símbolo + links
@@ -873,16 +909,27 @@
        ══════════════════════════════════════════════════════════════ -->
   <div id="page-result">
 
-    <!-- ── Barra de topo: voltar + data de atualização ── -->
+    <!-- ── Barra de topo: voltar + atualização + botão refresh ── -->
     <div class="res-topbar">
       <!-- Botão voltar: chama a função goBack() definida no JS -->
       <button class="btn-back" onclick="goBack()">← Nova Pesquisa</button>
 
+      <!--
+        Lado direito: data de atualização + botão de refresh + countdown.
+        O JS preenche #update-time e #refresh-countdown.
+        O botão chama refreshData() que rebusca a moeda atual sem voltar à home.
+      -->
       <div class="res-update-info">
         <span class="res-update-dot"></span>
         Atualizado em <span id="update-time">—</span>
-        &nbsp;·&nbsp; Fonte:
-        <a id="result-source-link" href="https://www.coingecko.com" target="_blank">CoinGecko API</a>
+        &nbsp;·&nbsp;
+        <a href="https://www.coingecko.com" target="_blank">CoinGecko API</a>
+        &nbsp;·&nbsp;
+        <!-- Botão de atualização manual -->
+        <button class="btn-refresh" id="btn-refresh" onclick="refreshData()" title="Atualizar dados agora">
+          <span class="btn-refresh-icon" id="refresh-icon">↻</span>
+          <span id="refresh-countdown">3:00</span>
+        </button>
       </div>
     </div>
 
@@ -1017,7 +1064,7 @@
            na função buildGaugeSVG() no bloco de scripts abaixo.
            ════════════════════════════════════════════════════════ -->
       <div class="card gauge-card">
-        <div class="card-label">🏷️ ESTÁGIO DO MARKET CAP</div>
+        <div class="card-label">🏷️ Estágio</div>
 
         <!--
           O SVG é injetado aqui pelo JS ao inicializar a página.
@@ -1861,11 +1908,92 @@
   }
 
   /* ════════════════════════════════════════════════════════════════
-     CONTROLE DE TELAS
-     showLoading() → exibe spinner + etapas
-     showResult()  → esconde home, esconde spinner, exibe resultado
-     goBack()      → volta para a home
-     ════════════════════════════════════════════════════════════════ */
+     CONTROLE DE TELAS + AUTO-REFRESH
+     ════════════════════════════════════════════════════════════════
+
+     _currentCoinId → guarda o ID da moeda exibida no momento.
+                      Usado pelo auto-refresh e pelo botão manual.
+
+     _refreshTimer  → referência ao setInterval do countdown.
+                      Guardamos para poder cancelar ao voltar à home.
+
+     AUTO-REFRESH:
+       A cada 3 minutos (180s) chama fetchCoinData(_currentCoinId)
+       silenciosamente — sem mostrar o spinner de loading.
+       O countdown no botão mostra o tempo restante.
+
+     BOTÃO MANUAL:
+       Clicando no botão, o refresh acontece imediatamente e o
+       contador reinicia do zero (3:00).
+  */
+  var _currentCoinId = null; /* ID da moeda atual (ex: 'solana') */
+  var _refreshTimer  = null; /* referência ao setInterval          */
+  var _countdown     = 180;  /* segundos até o próximo auto-refresh */
+
+  var REFRESH_INTERVAL = 180; /* 3 minutos em segundos */
+
+  /* Formata segundos em "M:SS" (ex: 125 → "2:05") */
+  function fmtCountdown(s) {
+    var m = Math.floor(s / 60);
+    var sec = s % 60;
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+
+  /* Inicia (ou reinicia) o contador e o auto-refresh */
+  function startRefreshTimer() {
+    /* Cancela timer anterior se existir */
+    if (_refreshTimer) clearInterval(_refreshTimer);
+
+    _countdown = REFRESH_INTERVAL;
+    var countdownEl = document.getElementById('refresh-countdown');
+    if (countdownEl) countdownEl.textContent = fmtCountdown(_countdown);
+
+    _refreshTimer = setInterval(function() {
+      _countdown--;
+      if (countdownEl) countdownEl.textContent = fmtCountdown(_countdown);
+
+      /* Quando chega a zero: rebusca silenciosamente e reinicia o contador */
+      if (_countdown <= 0) {
+        _countdown = REFRESH_INTERVAL;
+        if (_currentCoinId) silentRefetch(_currentCoinId);
+      }
+    }, 1000);
+  }
+
+  /* Para o timer (ao voltar para a home) */
+  function stopRefreshTimer() {
+    if (_refreshTimer) {
+      clearInterval(_refreshTimer);
+      _refreshTimer = null;
+    }
+  }
+
+  /*
+    silentRefetch() — rebusca os dados sem mostrar o spinner de loading.
+    Usado pelo auto-refresh. Se falhar silenciosamente (ex: sem internet),
+    apenas mostra o toast de erro sem sair da página de resultado.
+  */
+  function silentRefetch(coinId) {
+    /* Anima o ícone do botão */
+    var icon = document.getElementById('refresh-icon');
+    if (icon) {
+      icon.classList.remove('spinning');
+      void icon.offsetWidth; /* força reflow para reiniciar a animação */
+      icon.classList.add('spinning');
+      setTimeout(function() { icon.classList.remove('spinning'); }, 750);
+    }
+    /* Rebusca usando o mesmo fluxo do fetchCoinData mas sem spinner */
+    fetchCoinData(coinId, true /* silent */);
+  }
+
+  /* Botão manual de refresh — chamado pelo onclick do HTML */
+  function refreshData() {
+    if (_currentCoinId) {
+      startRefreshTimer(); /* reinicia o countdown do zero */
+      silentRefetch(_currentCoinId);
+    }
+  }
+  /* ── Controle de telas ────────────────────────────────────────── */
   function showLoading(coinName) {
     document.getElementById('loading-coin-name').textContent =
       coinName ? coinName : 'Buscando dados...';
@@ -1882,10 +2010,13 @@
     document.getElementById('page-search').style.display = 'none';
     document.getElementById('page-result').style.display = 'block';
     hideLoading();
+    startRefreshTimer(); /* inicia o countdown ao exibir o resultado */
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function goBack() {
+    stopRefreshTimer(); /* cancela o auto-refresh ao voltar para a home */
+    _currentCoinId = null;
     document.getElementById('page-result').style.display = 'none';
     document.getElementById('page-search').style.display = 'block';
     document.getElementById('cryptoInput').value = '';
@@ -1982,168 +2113,152 @@
        • 404 → moeda não encontrada
        • DeFiLlama falha → TVL fica null (não bloqueia o resultado)
      ════════════════════════════════════════════════════════════════ */
-  function fetchCoinData(coinId) {
-    showLoading(coinId);
+  function fetchCoinData(coinId, silent) {
+    /*
+      silent=true → chamada do auto-refresh (sem spinner, sem esconder a home).
+      silent=false/undefined → chamada normal (mostra spinner, troca de tela).
+    */
+    _currentCoinId = coinId; /* guarda para o auto-refresh usar */
+
+    if (!silent) showLoading(coinId);
 
     var urlCG = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
               + '?localization=false&tickers=false&market_data=true'
               + '&community_data=true&developer_data=false&sparkline=false';
 
     var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
+    var urlVol7  = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
+                 + '/market_chart?vs_currency=usd&days=7&interval=daily';
 
     /*
-      Volume 7D — CoinGecko /market_chart retorna array de volumes diários.
-      Somamos os 7 últimos pontos para ter o total da semana.
-      Depois dividimos pelo marketCap para obter o %.
+      ESTRATÉGIA SEQUENCIAL PARA EVITAR 429:
+      ─────────────────────────────────────
+      O plano gratuito do CoinGecko bloqueia quando recebe 2 requests
+      simultâneos do mesmo cliente. Por isso NÃO podemos disparar
+      urlCG e urlVol7 ao mesmo tempo.
 
-      Endpoint: /coins/{id}/market_chart?vs_currency=usd&days=7&interval=daily
-      Resposta: { volumes: [[timestamp, vol], ...], ... }
-    */
-    var urlVol7 = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
-                + '/market_chart?vs_currency=usd&days=7&interval=daily';
+      ETAPA 1 → CoinGecko principal (aguarda resposta completa)
+      ETAPA 2 → market_chart 7D + DeFiLlama em paralelo
+               (DeFiLlama é outro domínio, não conflita com CoinGecko)
 
-    /*
-      3 chamadas em paralelo:
-        [0] CoinGecko dados gerais
-        [1] DeFiLlama TVL
-        [2] CoinGecko market_chart 7D
+      Isso acrescenta apenas ~0.5s ao tempo total, mas elimina o 429.
     */
-    Promise.allSettled([
-      fetchWithTimeout(urlCG, 15000).then(function(r) {
-        loadingStep('cg', 'done');
-        loadingStep('llama', 'active');
+
+    /* ── ETAPA 1: CoinGecko dados gerais ─────────────────────────── */
+    fetchWithTimeout(urlCG, 15000)
+      .then(function(r) {
+        if (!silent) { loadingStep('cg', 'done'); loadingStep('llama', 'active'); }
         if (r.status === 429) throw new Error('HTTP 429 — rate limit');
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
-      }),
-      fetchWithTimeout(urlLlama, 8000).then(function(r) {
-        if (!r.ok) throw new Error('sem TVL');
-        return r.json();
-      }),
-      fetchWithTimeout(urlVol7, 10000).then(function(r) {
-        if (!r.ok) throw new Error('sem vol7');
-        return r.json();
       })
-    ]).then(function(results) {
-      var cgResult    = results[0];
-      var llamaResult = results[1];
-      var vol7Result  = results[2]; /* market_chart 7D */
+      .then(function(cgData) {
 
-      /* Se CoinGecko falhou, exibe o erro e para */
-      if (cgResult.status === 'rejected') {
-        showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha na API');
-        return;
-      }
+        if (cgData.error) { showError(coinId, cgData.error); return; }
 
-      var data = cgResult.value;
+        var md    = cgData.market_data || {};
+        var links = cgData.links       || {};
 
-      /* Erro retornado dentro do JSON (ex: "coin not found") */
-      if (data.error) {
-        showError(coinId, data.error);
-        return;
-      }
+        /* ── ETAPA 2: market_chart 7D + DeFiLlama em paralelo ────── */
+        Promise.allSettled([
+          fetchWithTimeout(urlVol7, 10000).then(function(r) {
+            if (!r.ok) throw new Error('sem vol7');
+            return r.json();
+          }),
+          fetchWithTimeout(urlLlama, 8000).then(function(r) {
+            if (!r.ok) throw new Error('sem TVL');
+            return r.json();
+          })
+        ]).then(function(results) {
+          var vol7Result  = results[0];
+          var llamaResult = results[1];
 
-      /* Avança para etapa "Montando dashboard" */
-      loadingStep('llama', 'done');
-      loadingStep('render', 'active');
+          if (!silent) { loadingStep('llama', 'done'); loadingStep('render', 'active'); }
 
-      var md    = data.market_data || {};
-      var links = data.links || {};
+          /* Contratos */
+          var contracts = Object.entries(cgData.platforms || {})
+            .filter(function(p) { return p[1] && p[1].trim(); })
+            .sort(function(a, b) { return a[0].localeCompare(b[0]); })
+            .map(function(p) { return { network: p[0], address: p[1] }; });
 
-      /* Contratos: extrai de data.platforms, filtra vazios, ordena */
-      var contracts = Object.entries(data.platforms || {})
-        .filter(function(p) { return p[1] && p[1].trim(); })
-        .sort(function(a, b) { return a[0].localeCompare(b[0]); })
-        .map(function(p)  { return { network: p[0], address: p[1] }; });
+          /* Links sociais */
+          var twitterHandle  = links.twitter_screen_name;
+          var telegramHandle = links.telegram_channel_identifier;
+          var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
+          var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
 
-      /* Links sociais */
-      var twitterHandle  = links.twitter_screen_name;
-      var telegramHandle = links.telegram_channel_identifier;
-      var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
-      var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
-
-      /* TVL — null se DeFiLlama não respondeu */
-      var tvlValue = null;
-      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
-        tvlValue = llamaResult.value;
-      }
-
-      /*
-        Volume 7D — soma dos volumes diários dos últimos 7 dias.
-        O endpoint /market_chart?days=7&interval=daily retorna um array
-        de pares [timestamp_ms, volume_usd]. Somamos todos os valores.
-        Depois calculamos: volume7dPct = (total7d / marketCap) × 100
-      */
-      var volume7d    = null;
-      var volume7dPct = null;
-      if (vol7Result.status === 'fulfilled' && vol7Result.value && vol7Result.value.total_volumes) {
-        var vols = vol7Result.value.total_volumes;
-        /* Soma todos os volumes do período (cada item é [timestamp, volume]) */
-        var sum7d = vols.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
-        /*
-          O endpoint days=7 retorna 8 pontos (inclui o dia atual parcial).
-          Limitamos aos últimos 7 para bater com a metodologia do CMC.
-          slice(-7) pega os 7 últimos itens do array.
-        */
-        var last7 = vols.slice(-7);
-        var sum7d = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
-        if (sum7d > 0) {
-          volume7d = sum7d;
-          var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
-          if (mcapUsd > 0) {
-            volume7dPct = (sum7d / mcapUsd) * 100;
+          /* TVL */
+          var tvlValue = null;
+          if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
+            tvlValue = llamaResult.value;
           }
-        }
-      }
 
-      /* Calcula % liberado e % bloqueado */
-      var circ  = md.circulating_supply || null;
-      var total = md.total_supply       || null;
-      var pctFree   = (circ && total) ? (circ / total * 100) : null;
-      var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
+          /*
+            Volume 7D — soma dos volumes diários dos últimos 7 dias.
+            slice(-7) descarta o ponto parcial do dia atual
+            (o endpoint days=7 retorna 8 pontos incluindo hoje incompleto).
+          */
+          var volume7d = null, volume7dPct = null;
+          if (vol7Result.status === 'fulfilled' && vol7Result.value && vol7Result.value.total_volumes) {
+            var last7 = vol7Result.value.total_volumes.slice(-7);
+            var sum7d = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
+            if (sum7d > 0) {
+              volume7d = sum7d;
+              var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
+              if (mcapUsd > 0) volume7dPct = (sum7d / mcapUsd) * 100;
+            }
+          }
 
-      /* Objeto de dados completo → passado para renderResult() */
-      var coinData = {
-        name:   data.name,
-        symbol: (data.symbol || '').toUpperCase(),
-        rank:   data.market_cap_rank || '—',
-        image:  data.image ? (data.image.large || data.image.small || '') : '',
+          /* Supply */
+          var circ      = md.circulating_supply || null;
+          var total     = md.total_supply       || null;
+          var pctFree   = (circ && total) ? (circ / total * 100) : null;
+          var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
 
-        price:          md.current_price ? (md.current_price.usd || 0) : 0,
-        priceChange24h: md.price_change_percentage_24h || 0,
+          /* Objeto final */
+          var coinData = {
+            name:   cgData.name,
+            symbol: (cgData.symbol || '').toUpperCase(),
+            rank:   cgData.market_cap_rank || '—',
+            image:  cgData.image ? (cgData.image.large || cgData.image.small || '') : '',
 
-        marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
-        fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
+            price:          md.current_price ? (md.current_price.usd || 0) : 0,
+            priceChange24h: md.price_change_percentage_24h || 0,
 
-        volume24h: md.total_volume ? (md.total_volume.usd || 0) : 0,
-        /* volumePct = volume24h / marketCap × 100 */
-        volumePct: (md.total_volume && md.market_cap && md.market_cap.usd)
-                   ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
+            marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
+            fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
 
-        /* Volume 7D — calculado via /market_chart (soma dos 7 dias) */
-        volume7d:    volume7d,    /* valor absoluto em USD */
-        volume7dPct: volume7dPct, /* % do market cap      */
+            volume24h:   md.total_volume ? (md.total_volume.usd || 0) : 0,
+            volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd)
+                         ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
+            volume7d:    volume7d,
+            volume7dPct: volume7dPct,
 
-        circulatingSupply: circ,
-        totalSupply:       total,
-        pctFree:           pctFree,
-        pctLocked:         pctLocked,
-        tvl:               tvlValue,
+            circulatingSupply: circ,
+            totalSupply:       total,
+            pctFree:           pctFree,
+            pctLocked:         pctLocked,
+            tvl:               tvlValue,
 
-        website:  links.homepage   ? (links.homepage[0] || null) : null,
-        twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
-        telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
-        discord:  discordUrl       || null,
-        github:   githubUrl        || null,
+            website:  links.homepage   ? (links.homepage[0] || null) : null,
+            twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
+            telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
+            discord:  discordUrl       || null,
+            github:   githubUrl        || null,
+            contracts: contracts
+          };
 
-        contracts: contracts
-      };
-
-      /* Renderiza todos os cards e exibe a tela de resultado */
-      loadingStep('render', 'done');
-      renderResult(coinData);
-      showResult();
-    });
+          if (!silent) loadingStep('render', 'done');
+          renderResult(coinData);
+          /* Na primeira busca, showResult troca de tela.
+             No auto-refresh (silent), apenas atualiza os dados. */
+          if (!silent) showResult();
+        });
+      })
+      .catch(function(err) {
+        /* Erro na chamada principal do CoinGecko */
+        showError(coinId, err ? err.message : 'Falha na API');
+      });
   }
 
 
