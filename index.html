@@ -584,81 +584,55 @@
     .stat-sub { font-size: 10px; color: var(--res-text-muted); margin-top: 3px; }
 
     /* ══════════════════════════════════════════════════════════════
-       TOOLTIPS DE ESTATÍSTICAS — híbrido desktop + mobile
+       BARRA DE FÓRMULA — aparece na base do card Estatísticas
 
-       COMO FUNCIONA:
-       • Cada .stat-box recebe position:relative e data-tip="..."
-       • Desktop  → ::after pseudo-elemento aparece no :hover
-       • Mobile   → JS adiciona .tip-open no tap; fecha ao tocar fora
-       • O pseudo-elemento lê o conteúdo de data-tip via attr()
-       • max-width + white-space:normal para quebrar linhas longas
+       Substitui o tooltip clássico (que cortava nos cards do topo).
+       Quando o usuário passa o mouse ou toca em qualquer stat-box,
+       o texto explicativo aparece aqui, com espaço garantido.
+
+       Desktop : hover no .stat-box atualiza #stat-formula
+       Mobile  : touchstart no .stat-box atualiza #stat-formula
        ══════════════════════════════════════════════════════════════ */
 
-    /* O card precisa de position:relative para o tooltip se ancorar */
-    .stat-box { position: relative; }
+    /* O card precisa de cursor pointer para indicar interatividade */
+    .stat-box { cursor: default; }
+    .stat-box[data-tip] { cursor: help; }
 
-    /* Tooltip — pseudo-elemento ::after no card */
-    .stat-box[data-tip]::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 8px); /* aparece ACIMA do card */
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1a1a3a;
-      border: 1px solid rgba(108,92,231,0.4);
+    /* Barra de fórmula — fica escondida até o usuário interagir */
+    #stat-formula {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: rgba(108, 92, 231, 0.07);
+      border: 1px solid rgba(108, 92, 231, 0.2);
       border-radius: 10px;
-      padding: 9px 13px;
       font-family: 'Outfit', sans-serif;
       font-size: 11px;
-      font-weight: 400;
-      color: #b0b0d8;
-      line-height: 1.55;
-      white-space: normal;
-      width: max-content;
-      max-width: 220px;
-      text-align: center;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-      z-index: 999;
-      pointer-events: none;
-      /* Oculto por padrão */
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.18s ease, visibility 0.18s ease;
+      color: #6a6a9a;
+      line-height: 1.6;
+      min-height: 38px;
+      transition: color 0.25s ease, border-color 0.25s ease;
+
+      /* Estado vazio — mostra dica discreta */
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-
-    /* Setinha apontando para baixo (em direção ao card) */
-    .stat-box[data-tip]::before {
-      content: '';
-      position: absolute;
-      bottom: calc(100% + 2px);
-      left: 50%;
-      transform: translateX(-50%);
-      border: 5px solid transparent;
-      border-top-color: rgba(108,92,231,0.4);
-      z-index: 1000;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.18s ease, visibility 0.18s ease;
-      pointer-events: none;
+    #stat-formula::before {
+      content: 'ƒ';
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(108, 92, 231, 0.4);
+      flex-shrink: 0;
+      font-style: italic;
     }
-
-    /* Desktop: mostra no hover */
-    @media (hover: hover) {
-      .stat-box[data-tip]:hover::after,
-      .stat-box[data-tip]:hover::before { opacity: 1; visibility: visible; }
+    /* Quando tem conteúdo ativo, destaca levemente */
+    #stat-formula.active {
+      color: #9090c0;
+      border-color: rgba(108, 92, 231, 0.35);
     }
-
-    /* Mobile: mostra quando JS adiciona .tip-open */
-    .stat-box.tip-open::after,
-    .stat-box.tip-open::before { opacity: 1; visibility: visible; }
-
-    /* Tooltip na borda esquerda da grid — abre para a direita */
-    .stat-box.tip-right::after { left: 0; transform: none; }
-    .stat-box.tip-right::before { left: 18px; transform: none; }
-
-    /* Tooltip na borda direita da grid — abre para a esquerda */
-    .stat-box.tip-left::after { left: auto; right: 0; transform: none; }
-    .stat-box.tip-left::before { left: auto; right: 18px; transform: none; }
+    #stat-formula-text {
+      flex: 1;
+    }
 
     /* ══════════════════════════════════════════════════════════════
        CARD: GAUGE — Velocímetro semicircular de Market Cap
@@ -1073,12 +1047,12 @@
             <div class="stat-val violet" id="s-mcap">—</div>
             <div class="stat-sub" id="s-mcap-rank">—</div>
           </div>
-          <div class="stat-box tip-left" data-tip="Fully Diluted Valuation: Preço × Total Supply. Estimativa do valor se TODAS as moedas fossem emitidas hoje.">
+          <div class="stat-box" data-tip="Fully Diluted Valuation: Preço × Total Supply. Estimativa do valor se TODAS as moedas fossem emitidas hoje.">
             <div class="stat-lbl">FDV</div>
             <div class="stat-val" id="s-fdv">—</div>
           </div>
 
-          <div class="stat-box tip-right" data-tip="Volume negociado nas últimas 24h dividido pelo Market Cap. Verde ≥3% · Âmbar ≥1% · Vermelho <1%">
+          <div class="stat-box" data-tip="Volume negociado nas últimas 24h dividido pelo Market Cap. Verde ≥3% · Âmbar ≥1% · Vermelho <1%">
             <div class="stat-lbl">Volume 24h</div>
             <div class="stat-val" id="s-vol-pct">—</div>
             <div class="stat-sub" id="s-vol">—</div>
@@ -1088,11 +1062,11 @@
             <div class="stat-val" id="s-supply">—</div>
             <div class="stat-sub" id="s-supply-pct">—</div>
           </div>
-          <div class="stat-box tip-left" data-tip="Total de moedas já criadas ou programadas para existir. Inclui circulantes + bloqueadas. Exceto as queimadas.">
+          <div class="stat-box" data-tip="Total de moedas já criadas ou programadas para existir. Inclui circulantes + bloqueadas. Exceto as queimadas.">
             <div class="stat-lbl">Total Supply</div>
             <div class="stat-val" id="s-total">—</div>
           </div>
-          <div class="stat-box tip-right" data-tip="Volume total das últimas 7 dias dividido pelo Market Cap. Verde ≥15% · Âmbar ≥5% · Vermelho <5%">
+          <div class="stat-box" data-tip="Volume total das últimas 7 dias dividido pelo Market Cap. Verde ≥15% · Âmbar ≥5% · Vermelho <5%">
             <div class="stat-lbl">Volume 7D</div>
             <div class="stat-val" id="s-vol7-pct">—</div>
             <div class="stat-sub" id="s-vol7">—</div>
@@ -1102,7 +1076,7 @@
             <div class="stat-lbl">% Liberado</div>
             <div class="stat-val green" id="s-lib">—</div>
           </div>
-          <div class="stat-box tip-left" data-tip="100% − % Liberado. Supply ainda bloqueado: em vesting, reservas da equipe ou ainda não emitido.">
+          <div class="stat-box" data-tip="100% − % Liberado. Supply ainda bloqueado: em vesting, reservas da equipe ou ainda não emitido.">
             <div class="stat-lbl">% Bloqueado</div>
             <div class="stat-val amber" id="s-locked">—</div>
           </div>
@@ -1113,6 +1087,11 @@
             <div class="stat-val violet" id="s-tvl">—</div>
           </div>
 
+        </div>
+
+        <!-- Barra de fórmula — atualiza ao passar o mouse / tocar num card -->
+        <div id="stat-formula">
+          <span id="stat-formula-text">Passe o mouse em um card para ver a fórmula</span>
         </div>
       </div>
 
@@ -2049,30 +2028,57 @@
     });
   });
 
-  /* ══ TOOLTIPS MOBILE — tap para abrir, toca fora para fechar ════
-     Em dispositivos touch o hover CSS não dispara.
-     Toca no card → abre o tooltip; toca fora → fecha.
+  /* ══ BARRA DE FÓRMULA — hover no desktop, tap no mobile ═════════
+     Quando o usuário interage com um stat-box que tem data-tip,
+     o texto aparece na barra #stat-formula na base do card.
+     No mobile, um segundo tap no mesmo card limpa a barra.
   */
+  var formulaEl  = document.getElementById('stat-formula');
+  var formulaTxt = document.getElementById('stat-formula-text');
+  var defaultMsg = 'Passe o mouse em um card para ver a fórmula';
+
+  function showFormula(text) {
+    if (!formulaTxt) return;
+    formulaTxt.textContent = text || defaultMsg;
+    if (formulaEl) formulaEl.classList.toggle('active', !!text);
+  }
+
+  /* Desktop — hover */
+  document.querySelectorAll('.stat-box[data-tip]').forEach(function(box) {
+    box.addEventListener('mouseenter', function() {
+      showFormula(box.getAttribute('data-tip'));
+    });
+    box.addEventListener('mouseleave', function() {
+      showFormula('');
+      if (formulaTxt) formulaTxt.textContent = defaultMsg;
+      if (formulaEl) formulaEl.classList.remove('active');
+    });
+  });
+
+  /* Mobile — tap abre; segundo tap ou fora fecha */
+  var _lastTapped = null;
   document.querySelectorAll('.stat-box[data-tip]').forEach(function(box) {
     box.addEventListener('touchstart', function(e) {
-      var isOpen = box.classList.contains('tip-open');
-      /* fecha todos os outros primeiro */
-      document.querySelectorAll('.stat-box.tip-open').forEach(function(b) {
-        b.classList.remove('tip-open');
-      });
-      /* se estava fechado, abre este */
-      if (!isOpen) {
-        box.classList.add('tip-open');
+      if (_lastTapped === box) {
+        /* segundo tap no mesmo card → fecha */
+        _lastTapped = null;
+        showFormula('');
+        if (formulaTxt) formulaTxt.textContent = defaultMsg;
+        if (formulaEl) formulaEl.classList.remove('active');
+      } else {
+        _lastTapped = box;
+        showFormula(box.getAttribute('data-tip'));
         e.stopPropagation();
       }
     }, { passive: true });
   });
 
-  /* Toca fora de qualquer card → fecha todos */
+  /* Toca fora de qualquer card → fecha */
   document.addEventListener('touchstart', function() {
-    document.querySelectorAll('.stat-box.tip-open').forEach(function(b) {
-      b.classList.remove('tip-open');
-    });
+    _lastTapped = null;
+    showFormula('');
+    if (formulaTxt) formulaTxt.textContent = defaultMsg;
+    if (formulaEl) formulaEl.classList.remove('active');
   }, { passive: true });
 
   </script>
