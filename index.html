@@ -1610,15 +1610,18 @@
     setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)+'%'   : '—');
     setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2)+'%' : '—');
     setText('s-vol7',   d.volume7d  ? fmtUSD(d.volume7d) : '—');
-    /* TVL — verde se tem valor, muted se não tem */
+
+    /* TVL — exibe valor formatado se tem, ou mensagem discreta se não tem */
     var tvlEl = document.getElementById('s-tvl');
     if (d.tvl && d.tvl > 0) {
-      tvlEl.textContent = fmtUSD(d.tvl);
-      tvlEl.className   = 'stat-val violet'; /* roxo = tem TVL */
+      tvlEl.textContent  = fmtUSD(d.tvl);
+      tvlEl.className    = 'stat-val violet';
+      tvlEl.style.color  = '';
+      tvlEl.style.fontSize = '';
     } else {
-      tvlEl.textContent = 'Projeto sem TVL';
-      tvlEl.className   = 'stat-val';
-      tvlEl.style.color = '#3a3a60'; /* discreto */
+      tvlEl.textContent  = 'Projeto sem TVL';
+      tvlEl.className    = 'stat-val';
+      tvlEl.style.color  = '#3a3a60';
       tvlEl.style.fontSize = '13px';
     }
 
@@ -1759,37 +1762,46 @@
     var urlVol7  = 'https://api.coingecko.com/api/v3/coins/'+encodeURIComponent(coinId)+'/market_chart?vs_currency=usd&days=7&interval=daily';
 
     /*
-      DeFiLlama — tenta buscar TVL com múltiplos slugs.
-      A DeFiLlama usa slugs próprios que geralmente coincidem com o
-      ID do CoinGecko, mas nem sempre. Tentamos em sequência:
-        1. coinId original         (ex: "aave", "uniswap")
-        2. coinId sem sufixos      (ex: "avalanche-2" → "avalanche")
-        3. nome do projeto minúsculo (preenchido após CG responder)
-      Na primeira que retornar um número válido, usamos.
+      DeFiLlama tem dois tipos de TVL:
+        1. Protocolo DeFi → https://api.llama.fi/tvl/{slug}
+           Ex: aave, uniswap, curve → retorna um número direto
+
+        2. Blockchain (chain) → https://api.llama.fi/v2/chains
+           Ex: ethereum, solana, bitcoin → retorna array de chains
+           Buscamos a chain cujo gecko_id bate com o coinId
+
+      Estratégia: tenta como protocolo primeiro. Se falhar ou
+      retornar 0, busca no array de chains pelo gecko_id.
     */
-    function fetchTvl(slugs) {
-      if (!slugs.length) return Promise.resolve(null);
-      var slug = slugs[0];
-      return fetchWithTimeout('https://api.llama.fi/tvl/'+encodeURIComponent(slug), 6000)
+    var urlLlamaProtocol = 'https://api.llama.fi/tvl/'+encodeURIComponent(coinId);
+    var urlLlamaChains   = 'https://api.llama.fi/v2/chains';
+
+    function fetchTvlSmart(geckoId) {
+      /* Tenta protocolo primeiro */
+      return fetchWithTimeout(urlLlamaProtocol, 6000)
         .then(function(r) {
-          if (!r.ok) throw new Error('sem TVL');
+          if (!r.ok) throw new Error('not a protocol');
           return r.json();
         })
         .then(function(val) {
-          /* Valida: deve ser um número positivo */
           if (typeof val === 'number' && val > 0) return val;
-          throw new Error('sem TVL');
+          throw new Error('zero or invalid');
         })
         .catch(function() {
-          /* Tenta o próximo slug da lista */
-          return fetchTvl(slugs.slice(1));
+          /* Fallback: busca no endpoint de chains pelo gecko_id */
+          return fetchWithTimeout(urlLlamaChains, 8000)
+            .then(function(r) { return r.json(); })
+            .then(function(chains) {
+              if (!Array.isArray(chains)) return null;
+              /* Procura a chain cujo gecko_id bate com o coinId da CoinGecko */
+              var match = chains.find(function(c) {
+                return c.gecko_id && c.gecko_id.toLowerCase() === geckoId.toLowerCase();
+              });
+              return (match && typeof match.tvl === 'number' && match.tvl > 0) ? match.tvl : null;
+            })
+            .catch(function() { return null; });
         });
     }
-
-    /* Slug sem sufixos numéricos: "avalanche-2" → "avalanche" */
-    var coinIdClean = coinId.replace(/-\d+$/, '');
-    /* Slugs iniciais (nome do coin será adicionado depois que CG responder) */
-    var tvlSlugs = coinId === coinIdClean ? [coinId] : [coinId, coinIdClean];
 
     Promise.allSettled([
       fetchWithTimeout(urlCG, 15000).then(function(r) {
@@ -1799,10 +1811,10 @@
         if (!r.ok) throw new Error('HTTP_'+r.status);
         return r.json();
       }),
-      /* Placeholder — TVL é buscado depois que temos o nome do coin */
-      Promise.resolve(null)
+      fetchTvlSmart(coinId) /* tenta protocolo → fallback chain */
     ]).then(function(results) {
-      var cgResult = results[0];
+      var cgResult    = results[0];
+      var llamaResult = results[1];
 
       if (cgResult.status === 'rejected') { showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha'); return; }
       var cgData = cgResult.value;
@@ -1813,20 +1825,11 @@
       var md    = cgData.market_data || {};
       var links = cgData.links       || {};
 
-      /*
-        Agora que temos o nome do coin, adicionamos à lista de slugs.
-        Ex: coin "Hey Anon" → slug "hey-anon" (lowercase, espaços → hífens)
-        Isso aumenta muito as chances de match na DeFiLlama.
-      */
-      var nameSlug = (cgData.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      var allSlugs = tvlSlugs.slice();
-      if (nameSlug && allSlugs.indexOf(nameSlug) === -1) allSlugs.push(nameSlug);
-      /* Símbolo também pode ser o slug (ex: "ETH" → "eth") */
-      var symSlug = (cgData.symbol || '').toLowerCase();
-      if (symSlug && allSlugs.indexOf(symSlug) === -1) allSlugs.push(symSlug);
-
-      /* Busca TVL com todos os slugs disponíveis */
-      fetchTvl(allSlugs).then(function(tvlValue) {
+      /* TVL: fulfilled com número válido = tem TVL; null ou rejected = sem TVL */
+      var tvlValue = null;
+      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number' && llamaResult.value > 0) {
+        tvlValue = llamaResult.value;
+      }
 
       var circ      = md.circulating_supply || null;
       var total     = md.total_supply       || null;
@@ -1899,9 +1902,7 @@
             if (v7pct) { v7pct.textContent = '—'; v7pct.style.color = ''; }
           });
       }, 3500);
-
-      }); /* fim fetchTvl */
-    }); /* fim allSettled */
+    });
   }
 
   /* ══ DISPARO DA BUSCA ════════════════════════════════════════════ */
