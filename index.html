@@ -1382,157 +1382,68 @@
        ══════════════════════════════════════════════════════════════ -->
   <script>
 
-  /* ════════════════════════════════════════════════════════════════
-     UTILITÁRIOS DE FORMATAÇÃO
-     Funções puras — não dependem do DOM, só recebem números e
-     retornam strings formatadas.
-     ════════════════════════════════════════════════════════════════ */
+  /* ══ FORMATAÇÃO ══════════════════════════════════════════════════ */
 
-  /*
-    fmtUSD() — formata um número em dólares com sufixo legível.
-    Exemplos:
-      1500000000  → "US$ 1.50 B"
-      250000000   → "US$ 250.00 M"
-      0.000045    → "US$ 0.0000"
-    Para mudar o número de casas decimais, altere .toFixed(N).
-  */
   function fmtUSD(n) {
-    if (n == null || n === undefined) return '—';
-    if (n >= 1e12) return 'US$ ' + (n / 1e12).toFixed(2) + ' T';
-    if (n >= 1e9)  return 'US$ ' + (n / 1e9).toFixed(2)  + ' B';
-    if (n >= 1e6)  return 'US$ ' + (n / 1e6).toFixed(2)  + ' M';
-    if (n >= 1e3)  return 'US$ ' + (n / 1e3).toFixed(2)  + ' K';
+    if (n == null) return '—';
+    if (n >= 1e12) return 'US$ ' + (n/1e12).toFixed(2) + ' T';
+    if (n >= 1e9)  return 'US$ ' + (n/1e9).toFixed(2)  + ' B';
+    if (n >= 1e6)  return 'US$ ' + (n/1e6).toFixed(2)  + ' M';
+    if (n >= 1e3)  return 'US$ ' + (n/1e3).toFixed(2)  + ' K';
     return 'US$ ' + n.toFixed(4);
   }
-
-  /*
-    fmtNum() — formata supply (sem o "US$").
-    Exemplos: 572140000 → "572.14 M"
-  */
   function fmtNum(n) {
     if (!n) return '—';
-    if (n >= 1e9) return (n / 1e9).toFixed(2) + ' B';
-    if (n >= 1e6) return (n / 1e6).toFixed(2) + ' M';
-    if (n >= 1e3) return (n / 1e3).toFixed(2) + ' K';
+    if (n >= 1e9) return (n/1e9).toFixed(2) + ' B';
+    if (n >= 1e6) return (n/1e6).toFixed(2) + ' M';
+    if (n >= 1e3) return (n/1e3).toFixed(2) + ' K';
     return n.toFixed(0);
   }
-
-  /* setText() — atalho para preencher um elemento por id */
   function setText(id, v) {
     var el = document.getElementById(id);
-    if (el) el.textContent = (v !== null && v !== undefined) ? v : '—';
+    if (el) el.textContent = (v != null) ? v : '—';
   }
 
+  /* ══ GAUGE — velocímetro de Market Cap ══════════════════════════ */
 
-  /* ════════════════════════════════════════════════════════════════
-     GAUGE VELOCÍMETRO — constantes, geometria e renderização
-     ════════════════════════════════════════════════════════════════
-
-     NOVA CLASSIFICAÇÃO DE MARKET CAP (5 faixas):
-       Gema      → < $10M      → vermelho  → projetos experimentais
-       Pequena   → $10M–$1B   → laranja   → small cap em crescimento
-       Média     → $1B–$10B   → amarelo   → mid cap consolidada
-       Blue Chip → $10B–$200B → verde     → large cap estabelecida
-       Mega Cap  → > $200B    → azul      → escala global (BTC, ETH)
-
-     ESCALA LOGARÍTMICA:
-       Usamos log10 pois os valores variam de $1M a $1T+ (6 ordens).
-       Sem log, a faixa "Gema" ocuparia menos de 1% do visual.
-       Com log, todas as faixas ficam visualmente proporcionais.
-
-     TÉCNICA DO DONUT ARC:
-       Cada segmento é um path SVG preenchido com 4 pontos:
-         arco externo (sweep=1, horário → via topo ✓)
-         linha para borda interna
-         arco interno (sweep=0, anti-horário → via topo ✓)
-         fecha (Z)
-       Sweep flags incorretos causam o efeito "banana" (arcos pelo fundo).
-  */
-
-  /* ── Constantes do gauge (ajuste aqui para redimensionar) ── */
-  var GAUGE_CX    = 150;   /* centro horizontal no viewBox "0 0 300 195" */
-  var GAUGE_CY    = 172;   /* centro vertical — empurrado para baixo     */
-  var GAUGE_R_OUT = 138;   /* raio externo dos segmentos                 */
-  var GAUGE_R_IN  = 88;    /* raio interno dos segmentos (espessura=50)  */
-  var GAUGE_GAP   = 0;     /* graus de gap entre segmentos (0=sem borda) */
-                           /* use 0.8 para borda fina, 2.5 para gap largo */
-
-  /* Escala log: $1M (log=6) → $1T (log=12) mapeados em 0°→180° */
+  var GAUGE_CX    = 150;
+  var GAUGE_CY    = 172;
+  var GAUGE_R_OUT = 138;
+  var GAUGE_R_IN  = 88;
+  var GAUGE_GAP   = 0;
   var GAUGE_LOG_MIN = 6;
   var GAUGE_LOG_MAX = 12;
 
-  /*
-    GAUGE_STAGES — array com os 5 estágios.
-    Para alterar limites, cores ou nomes: edite apenas este array.
-    Campos: name, color, min (USD), max (USD), range (exibição), id (para .active)
-  */
   var GAUGE_STAGES = [
-    { name: 'Gema',      color: '#ef4444', min: 0,    max: 1e7,      range: '< $10M',       id: 'gema'      },
-    { name: 'Pequena',   color: '#f97316', min: 1e7,  max: 1e9,      range: '$10M – $1B',   id: 'pequena'   },
-    { name: 'Média',     color: '#eab308', min: 1e9,  max: 1e10,     range: '$1B – $10B',   id: 'media'     },
-    { name: 'Blue Chip', color: '#22c55e', min: 1e10, max: 2e11,     range: '$10B – $200B', id: 'bluechip'  },
-    { name: 'Mega Cap',  color: '#3b82f6', min: 2e11, max: Infinity, range: '> $200B',      id: 'megacap'   },
+    { name: 'Gema',      color: '#ef4444', min: 0,    max: 1e7,     range: '< $10M',       id: 'gema'     },
+    { name: 'Pequena',   color: '#f97316', min: 1e7,  max: 1e9,     range: '$10M – $1B',   id: 'pequena'  },
+    { name: 'Média',     color: '#eab308', min: 1e9,  max: 1e10,    range: '$1B – $10B',   id: 'media'    },
+    { name: 'Blue Chip', color: '#22c55e', min: 1e10, max: 2e11,    range: '$10B – $200B', id: 'bluechip' },
+    { name: 'Mega Cap',  color: '#3b82f6', min: 2e11, max: Infinity, range: '> $200B',      id: 'megacap'  },
   ];
 
-  /* Converte market cap em ângulo do gauge (0°=esq, 180°=dir) */
   function gaugeAngle(mcap) {
-    var clamped = Math.max(1e6, Math.min(1e12, mcap));
-    return ((Math.log10(clamped) - GAUGE_LOG_MIN) / (GAUGE_LOG_MAX - GAUGE_LOG_MIN)) * 180;
+    var c = Math.max(1e6, Math.min(1e12, mcap));
+    return ((Math.log10(c) - GAUGE_LOG_MIN) / (GAUGE_LOG_MAX - GAUGE_LOG_MIN)) * 180;
   }
 
-  /* Ângulos de fronteira calculados automaticamente pelos limites */
-  var GAUGE_BOUNDS = [
-    0,
-    gaugeAngle(1e7),   /* $10M  ≈  30° */
-    gaugeAngle(1e9),   /* $1B   =  90° */
-    gaugeAngle(1e10),  /* $10B  ≈ 120° */
-    gaugeAngle(2e11),  /* $200B ≈ 159° */
-    180
-  ];
+  var GAUGE_BOUNDS = [0, gaugeAngle(1e7), gaugeAngle(1e9), gaugeAngle(1e10), gaugeAngle(2e11), 180];
 
-  /*
-    gaugePt(r, alpha) — ângulo do gauge → coordenadas SVG
-    Sistema: alpha=0°=esq, alpha=90°=topo, alpha=180°=dir
-    Fórmulas: x = CX - r·cos(α)
-              y = CY - r·sin(α)  (subtrai porque y cresce para baixo)
-  */
   function gaugePt(r, alpha) {
     var rad = alpha * Math.PI / 180;
-    return {
-      x: GAUGE_CX - r * Math.cos(rad),
-      y: GAUGE_CY - r * Math.sin(rad)
-    };
+    return { x: GAUGE_CX - r * Math.cos(rad), y: GAUGE_CY - r * Math.sin(rad) };
   }
-
   function gF(n) { return n.toFixed(3); }
 
-  /*
-    gaugeSegPath(a1, a2) — gera o path SVG de um segmento donut.
-
-    CORREÇÃO CRÍTICA dos sweep flags:
-      Arco externo (esq→dir via TOPO): sweep=1 (horário)    ✓
-      Arco interno (dir→esq via TOPO): sweep=0 (anti-hor.)  ✓
-      Se invertidos, os arcos vão pelo fundo → efeito "banana" ❌
-  */
   function gaugeSegPath(a1, a2) {
-    var s = a1 + GAUGE_GAP;
-    var e = a2 - GAUGE_GAP;
+    var s = a1 + GAUGE_GAP, e = a2 - GAUGE_GAP;
     if (s >= e) return 'M 0 0';
-    var o1 = gaugePt(GAUGE_R_OUT, s);
-    var o2 = gaugePt(GAUGE_R_OUT, e);
-    var i2 = gaugePt(GAUGE_R_IN,  e);
-    var i1 = gaugePt(GAUGE_R_IN,  s);
+    var o1 = gaugePt(GAUGE_R_OUT, s), o2 = gaugePt(GAUGE_R_OUT, e);
+    var i2 = gaugePt(GAUGE_R_IN,  e), i1 = gaugePt(GAUGE_R_IN,  s);
     var la = (e - s) > 180 ? 1 : 0;
-    return [
-      'M '  + gF(o1.x) + ' ' + gF(o1.y),
-      'A '  + GAUGE_R_OUT + ' ' + GAUGE_R_OUT + ' 0 ' + la + ' 1 ' + gF(o2.x) + ' ' + gF(o2.y),
-      'L '  + gF(i2.x) + ' ' + gF(i2.y),
-      'A '  + GAUGE_R_IN  + ' ' + GAUGE_R_IN  + ' 0 ' + la + ' 0 ' + gF(i1.x) + ' ' + gF(i1.y),
-      'Z'
-    ].join(' ');
+    return 'M '+gF(o1.x)+' '+gF(o1.y)+' A '+GAUGE_R_OUT+' '+GAUGE_R_OUT+' 0 '+la+' 1 '+gF(o2.x)+' '+gF(o2.y)+' L '+gF(i2.x)+' '+gF(i2.y)+' A '+GAUGE_R_IN+' '+GAUGE_R_IN+' 0 '+la+' 0 '+gF(i1.x)+' '+gF(i1.y)+' Z';
   }
 
-  /* Retorna o estágio correspondente ao market cap */
   function gaugeGetStage(mcap) {
     for (var i = GAUGE_STAGES.length - 1; i >= 0; i--) {
       if (mcap >= GAUGE_STAGES[i].min) return GAUGE_STAGES[i];
@@ -1540,57 +1451,33 @@
     return GAUGE_STAGES[0];
   }
 
-  /*
-    buildGaugeSVG() — constrói os elementos SVG do velocímetro.
-    Chamada UMA VEZ ao inicializar. Não recria os elementos a cada busca.
-  */
   function buildGaugeSVG() {
-    var NS  = 'http://www.w3.org/2000/svg';
+    var NS = 'http://www.w3.org/2000/svg';
     function svgEl(tag, attrs) {
       var e = document.createElementNS(NS, tag);
       Object.entries(attrs).forEach(function(kv) { e.setAttribute(kv[0], kv[1]); });
       return e;
     }
-
-    /* Trilha de fundo (donut escuro ligeiramente maior que os segmentos) */
-    var bgO1 = gaugePt(GAUGE_R_OUT + 7, 0);
-    var bgO2 = gaugePt(GAUGE_R_OUT + 7, 180);
-    var bgI2 = gaugePt(GAUGE_R_IN  - 7, 180);
-    var bgI1 = gaugePt(GAUGE_R_IN  - 7, 0);
-    document.getElementById('gauge-bg-track').setAttribute('d', [
-      'M ' + gF(bgO1.x) + ' ' + gF(bgO1.y),
-      'A ' + (GAUGE_R_OUT+7) + ' ' + (GAUGE_R_OUT+7) + ' 0 0 1 ' + gF(bgO2.x) + ' ' + gF(bgO2.y),
-      'L ' + gF(bgI2.x) + ' ' + gF(bgI2.y),
-      'A ' + (GAUGE_R_IN-7)  + ' ' + (GAUGE_R_IN-7)  + ' 0 0 0 ' + gF(bgI1.x) + ' ' + gF(bgI1.y),
-      'Z'
-    ].join(' '));
-
-    /* Segmentos coloridos */
+    var bgO1 = gaugePt(GAUGE_R_OUT+7, 0), bgO2 = gaugePt(GAUGE_R_OUT+7, 180);
+    var bgI2 = gaugePt(GAUGE_R_IN-7, 180), bgI1 = gaugePt(GAUGE_R_IN-7, 0);
+    var bgPath = 'M '+gF(bgO1.x)+' '+gF(bgO1.y)+' A '+(GAUGE_R_OUT+7)+' '+(GAUGE_R_OUT+7)+' 0 0 1 '+gF(bgO2.x)+' '+gF(bgO2.y)+' L '+gF(bgI2.x)+' '+gF(bgI2.y)+' A '+(GAUGE_R_IN-7)+' '+(GAUGE_R_IN-7)+' 0 0 0 '+gF(bgI1.x)+' '+gF(bgI1.y)+' Z';
+    var bg = document.getElementById('gauge-bg-track');
+    if (bg) bg.setAttribute('d', bgPath);
     var segsGroup = document.getElementById('gauge-segments');
-    GAUGE_STAGES.forEach(function(stage, i) {
-      segsGroup.appendChild(svgEl('path', {
-        d: gaugeSegPath(GAUGE_BOUNDS[i], GAUGE_BOUNDS[i + 1]),
-        fill: stage.color
-      }));
-    });
-
-    /* Ticks separadores (linhas finas na cor do fundo entre os segmentos) */
+    if (segsGroup) {
+      GAUGE_STAGES.forEach(function(stage, i) {
+        segsGroup.appendChild(svgEl('path', { d: gaugeSegPath(GAUGE_BOUNDS[i], GAUGE_BOUNDS[i+1]), fill: stage.color }));
+      });
+    }
     var ticksGroup = document.getElementById('gauge-ticks');
-    for (var i = 1; i < GAUGE_BOUNDS.length - 1; i++) {
-      var pI = gaugePt(GAUGE_R_IN  - 6, GAUGE_BOUNDS[i]);
-      var pO = gaugePt(GAUGE_R_OUT + 6, GAUGE_BOUNDS[i]);
-      ticksGroup.appendChild(svgEl('line', {
-        x1: gF(pO.x), y1: gF(pO.y),
-        x2: gF(pI.x), y2: gF(pI.y),
-        stroke: '#0d0d22', 'stroke-width': '1.5', 'stroke-linecap': 'butt'
-      }));
+    if (ticksGroup) {
+      for (var i = 1; i < GAUGE_BOUNDS.length - 1; i++) {
+        var pI = gaugePt(GAUGE_R_IN-6, GAUGE_BOUNDS[i]), pO = gaugePt(GAUGE_R_OUT+6, GAUGE_BOUNDS[i]);
+        ticksGroup.appendChild(svgEl('line', { x1:gF(pO.x), y1:gF(pO.y), x2:gF(pI.x), y2:gF(pI.y), stroke:'#0d0d22', 'stroke-width':'1.5', 'stroke-linecap':'butt' }));
+      }
     }
   }
 
-  /*
-    buildGaugeLegend() — gera as linhas da legenda (estágios) uma vez.
-    O JS apenas adiciona/remove .active a cada busca.
-  */
   function buildGaugeLegend() {
     var container = document.getElementById('gauge-stages');
     if (!container) return;
@@ -1599,684 +1486,309 @@
       var item = document.createElement('div');
       item.className = 'stage';
       item.id = 'st-' + s.id;
-      item.innerHTML =
-        '<div class="stage-dot" style="background:' + s.color + '"></div>' +
-        '<span class="stage-name">' + s.name + '</span>' +
-        '<span class="stage-range">' + s.range + '</span>';
+      item.innerHTML = '<div class="stage-dot" style="background:'+s.color+'"></div><span class="stage-name">'+s.name+'</span><span class="stage-range">'+s.range+'</span>';
       container.appendChild(item);
     });
   }
 
-  /*
-    animateGauge(mcap) — atualiza o velocímetro com o market cap da API.
-    Chamada por renderResult() a cada nova busca.
-
-    ANIMAÇÃO DE BALANÇO (efeito velocímetro real):
-    Em vez de usar CSS transition simples, usamos @keyframes com
-    variáveis CSS (--needle-from, --needle-to, etc.) para controlar
-    os 4 pontos da animação: partida → ultrapassagem → recuo → parada.
-
-    Parâmetro: mcap → número em USD (ex: 51090000000 para Solana)
-  */
   function animateGauge(mcap) {
-    var stage    = gaugeGetStage(mcap);
-    var angle    = gaugeAngle(mcap);
-    var cssAngle = 180 + angle;
-
+    var stage = gaugeGetStage(mcap);
+    var cssAngle = 180 + gaugeAngle(mcap);
     var needleEl = document.getElementById('needle-rotate');
     if (needleEl) {
-      /*
-        Pega o ângulo atual antes de atualizar (para a animação partir daí).
-        Extrai o número de "rotate(Xdeg)" via regex.
-      */
-      var currentTransform = needleEl.style.transform || 'rotate(180deg)';
-      var fromMatch = currentTransform.match(/rotate\(([^d]+)deg\)/);
-      var fromAngle = fromMatch ? parseFloat(fromMatch[1]) : 180;
-
-      /*
-        Define os 4 pontos da animação como variáveis CSS:
-          --needle-from     → posição de partida (ângulo anterior)
-          --needle-to-over  → ultrapassa 8° além do alvo (inércia)
-          --needle-to-back  → recua 4° (mola)
-          --needle-to       → posição final (alvo real)
-      */
-      needleEl.style.setProperty('--needle-from',    'rotate(' + fromAngle           + 'deg)');
-      needleEl.style.setProperty('--needle-to-over', 'rotate(' + (cssAngle + 8)      + 'deg)');
-      needleEl.style.setProperty('--needle-to-back', 'rotate(' + (cssAngle - 4)      + 'deg)');
-      needleEl.style.setProperty('--needle-to',      'rotate(' + cssAngle            + 'deg)');
-
-      /*
-        Remove e reaplica a animação para garantir que reinicia mesmo
-        que o ângulo seja o mesmo da busca anterior.
-        O setTimeout(0) força o browser a processar o "remove" antes do "add".
-      */
+      var cur = needleEl.style.transform || 'rotate(180deg)';
+      var m = cur.match(/rotate\(([^d]+)deg\)/);
+      var from = m ? parseFloat(m[1]) : 180;
+      needleEl.style.setProperty('--needle-from',    'rotate('+from+'deg)');
+      needleEl.style.setProperty('--needle-to-over', 'rotate('+(cssAngle+8)+'deg)');
+      needleEl.style.setProperty('--needle-to-back', 'rotate('+(cssAngle-4)+'deg)');
+      needleEl.style.setProperty('--needle-to',      'rotate('+cssAngle+'deg)');
       needleEl.style.animation = 'none';
-      needleEl.style.transform = 'rotate(' + fromAngle + 'deg)';
+      needleEl.style.transform = 'rotate('+from+'deg)';
       setTimeout(function() {
-        needleEl.style.animation = 'needle-arrive 1.1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards';
-        /* Após a animação terminar, fixa o transform final e limpa o animation
-           para evitar que futuras mudanças de estilo reiniciem o keyframe */
-        setTimeout(function() {
-          needleEl.style.animation = 'none';
-          needleEl.style.transform = 'rotate(' + cssAngle + 'deg)';
-        }, 1150);
+        needleEl.style.animation = 'needle-arrive 1.1s cubic-bezier(0.25,0.46,0.45,0.94) forwards';
+        setTimeout(function() { needleEl.style.animation = 'none'; needleEl.style.transform = 'rotate('+cssAngle+'deg)'; }, 1150);
       }, 20);
     }
-
-    /* Market cap em destaque (grande, mono, cor da categoria) */
     var valEl = document.getElementById('gauge-val');
-    if (valEl) {
-      valEl.textContent = fmtUSD(mcap);
-      valEl.style.color = stage.color;
-    }
-
-    /* Nome da categoria (pequeno, discreto, levemente colorido) */
+    if (valEl) { valEl.textContent = fmtUSD(mcap); valEl.style.color = stage.color; }
     var catEl = document.getElementById('gauge-cat-name');
-    if (catEl) {
-      catEl.textContent = stage.name;
-      catEl.style.color = stage.color + 'bb'; /* 73% de opacidade */
-    }
-
-    /* Destaca o estágio ativo na legenda */
+    if (catEl) { catEl.textContent = stage.name; catEl.style.color = stage.color + 'bb'; }
     GAUGE_STAGES.forEach(function(s) {
-      var el = document.getElementById('st-' + s.id);
+      var el = document.getElementById('st-'+s.id);
       if (el) el.classList.toggle('active', s.id === stage.id);
     });
   }
 
-  /* Inicializa o gauge (constrói SVG e legenda uma única vez) */
   buildGaugeSVG();
   buildGaugeLegend();
 
+  /* ══ CONTRATOS ═══════════════════════════════════════════════════ */
 
-  /* ════════════════════════════════════════════════════════════════
-     CONTRATOS — combobox
-     ════════════════════════════════════════════════════════════════ */
-  var _contracts = []; /* guarda os contratos da moeda atual */
-
-  /*
-    buildContracts() — preenche o combobox com as redes disponíveis.
-    Recebe uma lista: [ { network: 'ethereum', address: '0x123...' }, ... ]
-    Se não houver contratos, exibe "Layer 1 / Nativo".
-  */
+  var _contracts = [];
   function buildContracts(list) {
-    _contracts = list || [];
+    _contracts = list && list.length ? list : [{ network: 'Layer 1 / Nativo', address: 'Blockchain própria — sem contrato em outras redes' }];
     var sel = document.getElementById('contract-select');
     sel.innerHTML = '';
-
-    if (!_contracts.length) {
-      /* Moeda sem contratos ERC-20 (ex: Bitcoin, Solana nativos) */
-      _contracts = [{ network: 'Layer 1 / Nativo', address: 'Blockchain própria — sem contrato em outras redes' }];
-    }
-
-    _contracts.forEach(function (c, i) {
+    _contracts.forEach(function(c, i) {
       var opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = c.network;
-      sel.appendChild(opt);
+      opt.value = i; opt.textContent = c.network; sel.appendChild(opt);
     });
     showContract(0);
   }
-
-  /* Exibe o endereço da rede selecionada no combobox */
   function showContract(idx) {
     var c = _contracts[idx]; if (!c) return;
     document.getElementById('contract-net').textContent  = c.network.toUpperCase();
     document.getElementById('contract-addr').textContent = c.address;
   }
-
-  /* Copia o endereço atual para o clipboard. Botão vira "✓" por 1.5s */
   function copyAddr() {
     var v = document.getElementById('contract-addr').textContent;
     if (v && v !== '—') {
-      navigator.clipboard.writeText(v).then(function () {
-        var btn = document.querySelector('.copy-btn');
-        var old = btn.textContent;
-        btn.textContent = '✓';
-        setTimeout(function () { btn.textContent = old; }, 1500);
+      navigator.clipboard.writeText(v).then(function() {
+        var b = document.querySelector('.copy-btn'); var old = b.textContent;
+        b.textContent = '✓'; setTimeout(function(){ b.textContent = old; }, 1500);
       });
     }
   }
 
+  /* ══ LINKS SOCIAIS ═══════════════════════════════════════════════ */
 
-  /* ════════════════════════════════════════════════════════════════
-     LINKS SOCIAIS
-     buildLinks() — gera os badges/links na linha abaixo do nome.
-     Para adicionar uma nova rede social, copie o padrão do array links[].
-     ════════════════════════════════════════════════════════════════ */
   function buildLinks(d) {
-    var wrap = document.getElementById('hero-links');
-    wrap.innerHTML = '';
-
-    /* Símbolo — badge sem link */
+    var wrap = document.getElementById('hero-links'); wrap.innerHTML = '';
     var sym = document.createElement('span');
-    sym.className = 'hero-link';
-    sym.style.fontFamily = "'JetBrains Mono', monospace";
-    sym.style.color = '#fff';
-    sym.style.borderColor = 'var(--res-border-h)';
-    sym.textContent = d.symbol;
-    wrap.appendChild(sym);
-
-    /* Ranking de mercado — badge sem link */
+    sym.className = 'hero-link'; sym.style.fontFamily = "'JetBrains Mono',monospace"; sym.style.color = '#fff'; sym.style.borderColor = 'var(--res-border-h)'; sym.textContent = d.symbol; wrap.appendChild(sym);
     var rk = document.createElement('span');
-    rk.className = 'hero-link';
-    rk.style.color = 'var(--res-violet)';
-    rk.style.fontWeight = '700';
-    rk.textContent = '#' + d.rank;
-    wrap.appendChild(rk);
-
-    /*
-      Links clicáveis — adicione/remova itens aqui.
-      url: null → o badge não aparece (evita links quebrados)
-    */
-    var links = [
-      { url: d.website,  label: 'Website',    icon: '🌐' },
-      { url: d.twitter,  label: 'Twitter / X', icon: '𝕏'  },
-      { url: d.telegram, label: 'Telegram',   icon: '✈️'  },
-      { url: d.discord,  label: 'Discord',    icon: '💬'  },
-      { url: d.github,   label: 'GitHub',     icon: '🐙'  },
-    ];
-
-    links.forEach(function (l) {
-      if (!l.url) return; /* pula links que não existem */
-      var a = document.createElement('a');
-      a.href = l.url; a.target = '_blank'; a.rel = 'noopener';
-      a.className = 'hero-link';
-      a.textContent = l.icon + ' ' + l.label;
-      wrap.appendChild(a);
+    rk.className = 'hero-link'; rk.style.color = 'var(--res-violet)'; rk.style.fontWeight = '700'; rk.textContent = '#'+d.rank; wrap.appendChild(rk);
+    [{ url:d.website, label:'Website', icon:'🌐' }, { url:d.twitter, label:'Twitter / X', icon:'𝕏' }, { url:d.telegram, label:'Telegram', icon:'✈️' }, { url:d.discord, label:'Discord', icon:'💬' }, { url:d.github, label:'GitHub', icon:'🐙' }].forEach(function(l) {
+      if (!l.url) return;
+      var a = document.createElement('a'); a.href = l.url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'hero-link'; a.textContent = l.icon+' '+l.label; wrap.appendChild(a);
     });
   }
 
+  /* ══ RENDER PRINCIPAL ════════════════════════════════════════════ */
 
-  /* ════════════════════════════════════════════════════════════════
-     RENDER PRINCIPAL
-     renderResult(d) — recebe o objeto de dados e preenche todos os
-     elementos do #page-result.
-
-     O objeto d deve ter a estrutura:
-     {
-       name, symbol, rank, image,
-       price, priceChange24h,
-       marketCap, fdv,
-       volume24h, volumePct, volume7d,
-       circulatingSupply, totalSupply, pctFree, pctLocked,
-       tvl,
-       website, twitter, telegram, discord, github,
-       contracts: [ { network, address }, ... ]
-     }
-     ════════════════════════════════════════════════════════════════ */
   function renderResult(d) {
-    /* Data e hora de atualização */
     var now = new Date();
-    document.getElementById('update-time').textContent =
-      now.toLocaleDateString('pt-BR') + ', ' + now.toLocaleTimeString('pt-BR');
-
-    /* Logo e nome da moeda */
+    document.getElementById('update-time').textContent = now.toLocaleDateString('pt-BR')+', '+now.toLocaleTimeString('pt-BR');
     document.getElementById('hero-logo').src = d.image || '';
     setText('hero-title', d.name);
-
-    /* Links sociais e badges */
     buildLinks(d);
 
-    /* ── Estatísticas ── */
     var chg = d.priceChange24h || 0;
     setText('s-price', fmtUSD(d.price));
-    /* Variação 24h — fica verde se positivo, vermelho se negativo */
     var chgEl = document.getElementById('s-chg');
-    chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '% (24h)';
+    chgEl.textContent = (chg >= 0 ? '+' : '')+chg.toFixed(2)+'% (24h)';
     chgEl.style.color = chg >= 0 ? '#34d399' : '#f87171';
 
     setText('s-mcap',      fmtUSD(d.marketCap));
-    setText('s-mcap-rank', 'Ranking #' + d.rank);
+    setText('s-mcap-rank', 'Ranking #'+d.rank);
     setText('s-fdv',       fmtUSD(d.fdv));
 
-    /*
-      Volume 24h — hierarquia invertida + cor por faixa:
-      • s-vol-pct → % do MCap (DESTAQUE, cor dinâmica)
-      • s-vol     → valor USD  (discreto, pequeno)
-
-      REGRA DE COR (24h):
-        ≥ 3%          → verde  (#34d399) — volume saudável
-        ≥ 1% e < 3%   → âmbar  (#fbbf24) — volume baixo, atenção
-        < 1%          → vermelho (#f87171) — liquidez preocupante
-    */
+    /* Volume 24h — % em destaque com cor semântica */
     var volPctEl = document.getElementById('s-vol-pct');
     if (d.volumePct != null) {
-      volPctEl.textContent = d.volumePct.toFixed(2) + '% do MCap';
-      if      (d.volumePct >= 3) volPctEl.style.color = '#34d399'; /* verde   */
-      else if (d.volumePct >= 1) volPctEl.style.color = '#fbbf24'; /* âmbar   */
-      else                       volPctEl.style.color = '#f87171'; /* vermelho */
-    } else {
-      volPctEl.textContent = '—';
-      volPctEl.style.color = '';
-    }
+      volPctEl.textContent = d.volumePct.toFixed(2)+'% do MCap';
+      volPctEl.style.color = d.volumePct >= 3 ? '#34d399' : d.volumePct >= 1 ? '#fbbf24' : '#f87171';
+    } else { volPctEl.textContent = '—'; volPctEl.style.color = ''; }
     setText('s-vol', fmtUSD(d.volume24h));
 
-    /*
-      Volume 7D — mesmo padrão:
-      • s-vol7-pct → % do MCap (DESTAQUE, cor dinâmica)
-      • s-vol7     → valor USD total dos 7 dias (discreto)
-
-      REGRA DE COR (7D):
-        ≥ 15%          → verde  (#34d399) — volume saudável
-        ≥ 5% e < 15%   → âmbar  (#fbbf24) — volume baixo, atenção
-        < 5%           → vermelho (#f87171) — liquidez preocupante
-
-      Referência: ~3%/dia × 7 dias = ~21% saudável.
-      15% é o limiar mínimo aceitável para uma semana.
-    */
-    var vol7PctEl = document.getElementById('s-vol7-pct');
+    /* Volume 7D — preenchido separadamente pelo fetchCoinData */
+    var v7pct = document.getElementById('s-vol7-pct');
+    var v7val = document.getElementById('s-vol7');
     if (d.volume7dPct != null) {
-      vol7PctEl.textContent = d.volume7dPct.toFixed(2) + '% do MCap';
-      if      (d.volume7dPct >= 15) vol7PctEl.style.color = '#34d399'; /* verde   */
-      else if (d.volume7dPct >=  5) vol7PctEl.style.color = '#fbbf24'; /* âmbar   */
-      else                          vol7PctEl.style.color = '#f87171'; /* vermelho */
+      v7pct.textContent = d.volume7dPct.toFixed(2)+'% do MCap';
+      v7pct.style.color = d.volume7dPct >= 15 ? '#34d399' : d.volume7dPct >= 5 ? '#fbbf24' : '#f87171';
+      if (v7val) v7val.textContent = fmtUSD(d.volume7d);
     } else {
-      vol7PctEl.textContent = '—';
-      vol7PctEl.style.color = '';
+      if (v7pct) { v7pct.textContent = '...'; v7pct.style.color = '#3a3a60'; }
+      if (v7val) { v7val.textContent = ''; }
     }
-    setText('s-vol7', d.volume7d ? fmtUSD(d.volume7d) : '—');
 
-    /* Supply, liberado, bloqueado */
     setText('s-supply', fmtNum(d.circulatingSupply));
-    document.getElementById('s-supply-pct').textContent =
-      d.pctFree ? d.pctFree.toFixed(1) + '% do total' : '—';
+    document.getElementById('s-supply-pct').textContent = d.pctFree ? d.pctFree.toFixed(1)+'% do total' : '—';
     setText('s-total',  fmtNum(d.totalSupply));
-    setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)   + '%' : '—');
-    setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2) + '%' : '—');
-    setText('s-tvl',    d.tvl       ? fmtUSD(d.tvl) : 'TVL não disponível');
+    setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)+'%'   : '—');
+    setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2)+'%' : '—');
+    setText('s-vol7',   d.volume7d  ? fmtUSD(d.volume7d) : '—');
+    setText('s-tvl',    d.tvl       ? fmtUSD(d.tvl)      : 'TVL não disponível');
 
-    /* ── Contratos ── */
     buildContracts(d.contracts);
-
-    /* ── Gauge ── */
     animateGauge(d.marketCap);
   }
 
-
-  /* ════════════════════════════════════════════════════════════════
-     CONTROLE DAS ETAPAS DE LOADING
-     Marca visualmente cada etapa: pendente → active → done
-     ════════════════════════════════════════════════════════════════ */
-  function loadingStep(id, state) {
-    /* state: 'active' | 'done' | '' (pendente) */
-    var el = document.getElementById('lstep-' + id);
-    if (el) { el.className = 'loading-step ' + state; }
-  }
-  function resetLoadingSteps() {
-    ['cg', 'llama', 'render'].forEach(function(id) { loadingStep(id, ''); });
-  }
-
-  /* ════════════════════════════════════════════════════════════════
-     CONTROLE DE TELAS + AUTO-REFRESH
-     ════════════════════════════════════════════════════════════════
-
-     _currentCoinId → guarda o ID da moeda exibida no momento.
-                      Usado pelo auto-refresh e pelo botão manual.
-
-     _refreshTimer  → referência ao setInterval do countdown.
-                      Guardamos para poder cancelar ao voltar à home.
-
-     AUTO-REFRESH:
-       A cada 3 minutos (180s) chama fetchCoinData(_currentCoinId)
-       silenciosamente — sem mostrar o spinner de loading.
-       O countdown no botão mostra o tempo restante.
-
-     BOTÃO MANUAL:
-       Clicando no botão, o refresh acontece imediatamente e o
-       contador reinicia do zero (3:00).
+  /* ══ CACHE ═══════════════════════════════════════════════════════
+     Guarda resultados por 3 min. Segunda pesquisa da mesma moeda
+     é instantânea. Botão ↻ invalida e força nova chamada.
   */
-  var _currentCoinId = null; /* ID da moeda atual (ex: 'solana') */
-  var _refreshTimer  = null; /* referência ao setInterval          */
-  var _countdown     = 180;  /* segundos até o próximo auto-refresh */
+  var _cache    = {};
+  var CACHE_TTL = 3 * 60 * 1000;
 
-  var REFRESH_INTERVAL = 180; /* 3 minutos em segundos */
+  function cacheGet(coinId) {
+    var e = _cache[coinId]; if (!e) return null;
+    if (Date.now() - e.ts > CACHE_TTL) { delete _cache[coinId]; return null; }
+    return e.data;
+  }
+  function cacheSet(coinId, data)    { _cache[coinId] = { data: data, ts: Date.now() }; }
+  function cacheInvalidate(coinId)   { delete _cache[coinId]; }
 
-  /* Formata segundos em "M:SS" (ex: 125 → "2:05") */
-  function fmtCountdown(s) {
-    var m = Math.floor(s / 60);
-    var sec = s % 60;
-    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  /* ══ TIMER DO VOL7D ══════════════════════════════════════════════
+     O vol7D é agendado 3.5s após cada pesquisa.
+     Ao pesquisar outra moeda, o timer anterior é cancelado.
+  */
+  var _vol7Timer = null;
+  function cancelPendingVol7() {
+    if (_vol7Timer) { clearTimeout(_vol7Timer); _vol7Timer = null; }
   }
 
-  /* Inicia (ou reinicia) o contador e o auto-refresh */
+  /* ══ AUTO-REFRESH ════════════════════════════════════════════════ */
+
+  var _currentCoinId = null;
+  var _refreshTimer  = null;
+  var _countdown     = 180;
+  var REFRESH_INTERVAL = 180;
+
+  function fmtCountdown(s) { var m = Math.floor(s/60); var sec = s%60; return m+':'+(sec<10?'0':'')+sec; }
+
   function startRefreshTimer() {
-    /* Cancela timer anterior se existir */
     if (_refreshTimer) clearInterval(_refreshTimer);
-
     _countdown = REFRESH_INTERVAL;
-    var countdownEl = document.getElementById('refresh-countdown');
-    if (countdownEl) countdownEl.textContent = fmtCountdown(_countdown);
-
+    var el = document.getElementById('refresh-countdown');
+    if (el) el.textContent = fmtCountdown(_countdown);
     _refreshTimer = setInterval(function() {
       _countdown--;
-      if (countdownEl) countdownEl.textContent = fmtCountdown(_countdown);
-
-      /* Quando chega a zero: rebusca silenciosamente e reinicia o contador */
-      if (_countdown <= 0) {
-        _countdown = REFRESH_INTERVAL;
-        if (_currentCoinId) silentRefetch(_currentCoinId);
-      }
+      if (el) el.textContent = fmtCountdown(_countdown);
+      if (_countdown <= 0) { _countdown = REFRESH_INTERVAL; if (_currentCoinId) silentRefetch(_currentCoinId); }
     }, 1000);
   }
+  function stopRefreshTimer() { if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; } }
 
-  /* Para o timer (ao voltar para a home) */
-  function stopRefreshTimer() {
-    if (_refreshTimer) {
-      clearInterval(_refreshTimer);
-      _refreshTimer = null;
-    }
-  }
-
-  /*
-    silentRefetch() — rebusca os dados sem mostrar o spinner de loading.
-    Usado pelo auto-refresh. Se falhar silenciosamente (ex: sem internet),
-    apenas mostra o toast de erro sem sair da página de resultado.
-  */
   function silentRefetch(coinId) {
-    /* Anima o ícone do botão */
     var icon = document.getElementById('refresh-icon');
-    if (icon) {
-      icon.classList.remove('spinning');
-      void icon.offsetWidth; /* força reflow para reiniciar a animação */
-      icon.classList.add('spinning');
-      setTimeout(function() { icon.classList.remove('spinning'); }, 750);
-    }
-    /* Rebusca usando o mesmo fluxo do fetchCoinData mas sem spinner */
-    fetchCoinData(coinId, true /* silent */);
+    if (icon) { icon.classList.remove('spinning'); void icon.offsetWidth; icon.classList.add('spinning'); setTimeout(function(){ icon.classList.remove('spinning'); }, 750); }
+    fetchCoinData(coinId, true);
+  }
+  function refreshData() {
+    if (_currentCoinId) { cacheInvalidate(_currentCoinId); startRefreshTimer(); silentRefetch(_currentCoinId); }
   }
 
-  /* Botão manual de refresh — chama a função global refreshData() do onclick do HTML */
-  function refreshData() {
-    if (_currentCoinId) {
-      /* Invalida o cache para forçar nova chamada à API */
-      cacheInvalidate(_currentCoinId);
-      startRefreshTimer();
-      silentRefetch(_currentCoinId);
-    }
-  }
-  /* ── Controle de telas ────────────────────────────────────────── */
-  function showLoading(coinName) {
-    document.getElementById('loading-coin-name').textContent =
-      coinName ? coinName : 'Buscando dados...';
-    resetLoadingSteps();
-    loadingStep('cg', 'active');
+  /* ══ CONTROLE DE TELAS ══════════════════════════════════════════ */
+
+  function loadingStep(id, state) { var el = document.getElementById('lstep-'+id); if (el) el.className = 'loading-step '+state; }
+  function resetLoadingSteps()    { ['cg','llama','render'].forEach(function(id){ loadingStep(id,''); }); }
+
+  function showLoading(name) {
+    document.getElementById('loading-coin-name').textContent = name || 'Buscando dados...';
+    resetLoadingSteps(); loadingStep('cg','active');
     document.getElementById('loading-screen').classList.add('active');
   }
-
-  function hideLoading() {
-    document.getElementById('loading-screen').classList.remove('active');
-  }
+  function hideLoading() { document.getElementById('loading-screen').classList.remove('active'); }
 
   function showResult() {
     document.getElementById('page-search').style.display = 'none';
     document.getElementById('page-result').style.display = 'block';
-    hideLoading();
-    startRefreshTimer(); /* inicia o countdown ao exibir o resultado */
+    hideLoading(); startRefreshTimer();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-
   function goBack() {
-    stopRefreshTimer(); /* cancela o auto-refresh ao voltar para a home */
-    _currentCoinId = null;
+    stopRefreshTimer(); cancelPendingVol7(); _currentCoinId = null;
     document.getElementById('page-result').style.display = 'none';
     document.getElementById('page-search').style.display = 'block';
     document.getElementById('cryptoInput').value = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  /* Exibe erro como toast (não bloqueia com alert) */
+  /* Toast de erro */
   function showError(coinId, msg) {
     hideLoading();
-
-    /* Cria ou reutiliza o toast de erro */
     var toast = document.getElementById('error-toast');
     if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'error-toast';
-      toast.style.cssText = [
-        'position:fixed', 'bottom:24px', 'left:50%', 'transform:translateX(-50%)',
-        'background:#1a0a0a', 'border:1px solid rgba(248,113,113,0.4)',
-        'border-radius:12px', 'padding:14px 20px', 'z-index:9999',
-        'font-family:Outfit,sans-serif', 'font-size:13px', 'color:#f87171',
-        'max-width:420px', 'text-align:center', 'line-height:1.5',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.5)', 'transition:opacity 0.4s'
-      ].join(';');
+      toast = document.createElement('div'); toast.id = 'error-toast';
+      toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a0a0a;border:1px solid rgba(248,113,113,0.4);border-radius:12px;padding:14px 20px;z-index:9999;font-family:Outfit,sans-serif;font-size:13px;color:#f87171;max-width:420px;text-align:center;line-height:1.5;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:opacity 0.4s';
       document.body.appendChild(toast);
     }
-
-    /* Mensagem amigável baseada no tipo de erro */
     var friendly;
-    if (!msg || msg === '') {
-      friendly = '⚠️ Erro desconhecido. Tente novamente.';
-    } else if (msg === '429' || msg.indexOf('429') !== -1 || msg.indexOf('rate') !== -1) {
-      friendly = '⏳ Limite da API atingido. Aguarde ~30 segundos e tente novamente.';
-    } else if (msg === '404' || msg.indexOf('coin not found') !== -1 || msg.indexOf('not found') !== -1) {
-      friendly = '🔍 "' + coinId + '" não encontrada. Verifique o ID no CoinGecko.';
-    } else if (msg.indexOf('timeout') !== -1 || msg.indexOf('Tempo limite') !== -1) {
-      friendly = '⏱️ A API demorou demais para responder. Tente novamente.';
-    } else if (msg.indexOf('fetch') !== -1 || msg.indexOf('Failed') !== -1 || msg.indexOf('network') !== -1) {
-      friendly = '🌐 Erro de conexão com a API. Verifique sua internet e tente novamente.';
-    } else {
-      /* Mostra o código real para facilitar diagnóstico */
-      friendly = '⚠️ Erro ao buscar "' + coinId + '": ' + msg;
-    }
-
-    toast.textContent = friendly;
-    toast.style.opacity = '1';
+    if (!msg)                                   friendly = '⚠️ Erro desconhecido. Tente novamente.';
+    else if (msg.indexOf('429') !== -1)         friendly = '⏳ Limite da API atingido. Aguarde ~30s e tente novamente.';
+    else if (msg.indexOf('404') !== -1)         friendly = '🔍 "'+coinId+'" não encontrada. Verifique o ID no CoinGecko.';
+    else if (msg.indexOf('timeout') !== -1)     friendly = '⏱️ API demorou demais. Tente novamente.';
+    else if (msg.toLowerCase().indexOf('failed') !== -1 || msg.indexOf('fetch') !== -1) friendly = '🌐 Erro de conexão. Verifique sua internet.';
+    else                                        friendly = '⚠️ Erro ao buscar "'+coinId+'": '+msg;
+    toast.textContent = friendly; toast.style.opacity = '1';
     clearTimeout(toast._timer);
-    toast._timer = setTimeout(function() {
-      toast.style.opacity = '0';
-    }, 5000);
+    toast._timer = setTimeout(function(){ toast.style.opacity = '0'; }, 5000);
   }
 
+  /* ══ FETCH COM TIMEOUT ══════════════════════════════════════════ */
 
-  /* ════════════════════════════════════════════════════════════════
-     FETCH COM TIMEOUT MANUAL (compatível com todos os browsers)
-
-     AbortSignal.timeout() não funciona em Safari < 16.4 e
-     Firefox < 100. Usamos AbortController + setTimeout manual,
-     que funciona em todos os browsers modernos.
-
-     Parâmetros:
-       url      → URL da requisição
-       timeoutMs → tempo máximo em ms antes de abortar
-     Retorna: Promise que resolve com Response ou rejeita com erro
-     ════════════════════════════════════════════════════════════════ */
   function fetchWithTimeout(url, timeoutMs) {
     var controller = new AbortController();
-    var timer = setTimeout(function() {
-      controller.abort();
-    }, timeoutMs);
-
-    return fetch(url, { signal: controller.signal }).then(function(response) {
-      clearTimeout(timer);
-      return response;
-    }).catch(function(err) {
-      clearTimeout(timer);
-      /* Transforma AbortError em mensagem legível */
-      if (err.name === 'AbortError') {
-        throw new Error('Tempo limite esgotado (timeout)');
-      }
-      throw err;
-    });
+    var timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    return fetch(url, { signal: controller.signal }).then(function(r){ clearTimeout(timer); return r; }).catch(function(err){ clearTimeout(timer); if (err.name === 'AbortError') throw new Error('timeout'); throw err; });
   }
 
-
-
-
-
-  /* ════════════════════════════════════════════════════════════════
-     CACHE DE PESQUISAS
-     ════════════════════════════════════════════════════════════════
-
-     Guarda o resultado completo de cada pesquisa por 3 minutos.
-     Na segunda pesquisa da mesma moeda: resultado instantâneo,
-     zero chamadas à API.
-
-     O botão ↻ Atualizar invalida o cache e força nova chamada.
+  /* ══ BUSCA NA API ════════════════════════════════════════════════
+     FLUXO:
+       1. Verifica cache — se válido exibe instantaneamente
+       2. Busca CoinGecko principal + DeFiLlama em paralelo
+       3. Exibe o dashboard imediatamente
+       4. Após 3.5s, busca o vol7D e atualiza o card
+          (3.5s garante intervalo seguro com o plano gratuito)
   */
-  var _cache     = {};             /* { coinId: { data, ts } }     */
-  var CACHE_TTL  = 3 * 60 * 1000; /* 3 minutos em milissegundos   */
-
-  /* Retorna os dados do cache se ainda frescos, ou null se expirado */
-  function cacheGet(coinId) {
-    var entry = _cache[coinId];
-    if (!entry) return null;
-    if (Date.now() - entry.ts > CACHE_TTL) {
-      delete _cache[coinId];
-      return null;
-    }
-    return entry.data;
-  }
-
-  /* Salva um resultado no cache com timestamp atual */
-  function cacheSet(coinId, data) {
-    _cache[coinId] = { data: data, ts: Date.now() };
-  }
-
-  /* Invalida o cache de uma moeda (usado pelo botão ↻ Atualizar) */
-  function cacheInvalidate(coinId) {
-    delete _cache[coinId];
-  }
-
-  /* ════════════════════════════════════════════════════════════════
-     BUSCA NA API
-     ════════════════════════════════════════════════════════════════ */
   function fetchCoinData(coinId, silent) {
     _currentCoinId = coinId;
+    cancelPendingVol7(); /* cancela vol7 de pesquisa anterior */
 
-    /*
-      Verifica o cache ANTES de chamar a API.
-      Se os dados estiverem frescos (< 3 min), renderiza imediatamente.
-      Modo silent nunca usa cache (sempre busca dados novos do servidor).
-    */
-  /* ════════════════════════════════════════════════════════════════
-     CONTROLE DE RATE LIMIT — solução simples e robusta
-
-     Estratégia:
-     • urlCG (dados principais) → dispara IMEDIATAMENTE sempre
-     • urlVol7 (market_chart)   → dispara com 3.5s de delay
-     • Se o usuário pesquisar de novo, o vol7 pendente é CANCELADO
-       e um novo é agendado para a nova moeda
-
-     Isso garante que a pesquisa principal nunca espera e o vol7
-     nunca conflita com a chamada principal.
-  */
-  var _vol7Timer = null; /* setTimeout pendente do vol7 atual */
-
-  /* Cancela o vol7 pendente (se houver) */
-  function cancelPendingVol7() {
-    if (_vol7Timer) {
-      clearTimeout(_vol7Timer);
-      _vol7Timer = null;
-    }
-  }
-
-  /* ════════════════════════════════════════════════════════════════
-     CACHE DE PESQUISAS
-     ════════════════════════════════════════════════════════════════ */
-  var _cache    = {};
-  var CACHE_TTL = 3 * 60 * 1000; /* 3 minutos */
-
-  function cacheGet(coinId) {
-    var entry = _cache[coinId];
-    if (!entry) return null;
-    if (Date.now() - entry.ts > CACHE_TTL) { delete _cache[coinId]; return null; }
-    return entry.data;
-  }
-  function cacheSet(coinId, data) { _cache[coinId] = { data: data, ts: Date.now() }; }
-  function cacheInvalidate(coinId) { delete _cache[coinId]; }
-
-  /* ════════════════════════════════════════════════════════════════
-     BUSCA NA API
-  ════════════════════════════════════════════════════════════════ */
-  function fetchCoinData(coinId, silent) {
-    _currentCoinId = coinId;
-
-    /* Cancela vol7 de pesquisa anterior para não conflitar */
-    cancelPendingVol7();
-
-    /* Cache hit → resultado instantâneo */
+    /* Cache hit — instantâneo */
     if (!silent) {
       var cached = cacheGet(coinId);
-      if (cached) {
-        renderResult(cached);
-        showResult();
-        startRefreshTimer();
-        return;
-      }
+      if (cached) { renderResult(cached); showResult(); startRefreshTimer(); return; }
       showLoading(coinId);
     }
 
-    var urlCG    = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
-                 + '?localization=false&tickers=false&market_data=true'
-                 + '&community_data=true&developer_data=false&sparkline=false';
-    var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
-    var urlVol7  = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
-                 + '/market_chart?vs_currency=usd&days=7&interval=daily';
+    var urlCG    = 'https://api.coingecko.com/api/v3/coins/'+encodeURIComponent(coinId)+'?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false';
+    var urlLlama = 'https://api.llama.fi/tvl/'+encodeURIComponent(coinId);
+    var urlVol7  = 'https://api.coingecko.com/api/v3/coins/'+encodeURIComponent(coinId)+'/market_chart?vs_currency=usd&days=7&interval=daily';
 
-    /*
-      ETAPA 1: CoinGecko principal + DeFiLlama em paralelo (disparo imediato).
-      ETAPA 2: vol7D agendado para 3.5s depois (via _vol7Timer).
-
-      Se o usuário pesquisar outra moeda antes do vol7 disparar,
-      cancelPendingVol7() cancela o timer e agenda um novo para a nova moeda.
-    */
     Promise.allSettled([
       fetchWithTimeout(urlCG, 15000).then(function(r) {
-        if (!silent) { loadingStep('cg', 'done'); loadingStep('llama', 'active'); }
+        if (!silent) { loadingStep('cg','done'); loadingStep('llama','active'); }
         if (r.status === 429) throw new Error('429');
         if (r.status === 404) throw new Error('404');
-        if (!r.ok) throw new Error('HTTP_' + r.status);
+        if (!r.ok) throw new Error('HTTP_'+r.status);
         return r.json();
       }),
       fetchWithTimeout(urlLlama, 8000).then(function(r) {
-        if (!r.ok) throw new Error('sem TVL');
-        return r.json();
+        if (!r.ok) throw new Error('sem TVL'); return r.json();
       })
     ]).then(function(results) {
-      var cgResult    = results[0];
-      var llamaResult = results[1];
+      var cgResult = results[0], llamaResult = results[1];
 
-      if (cgResult.status === 'rejected') {
-        showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha na API');
-        return;
-      }
+      if (cgResult.status === 'rejected') { showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha'); return; }
       var cgData = cgResult.value;
-      if (!cgData || cgData.error) {
-        showError(coinId, cgData && cgData.error ? cgData.error : '404');
-        return;
-      }
+      if (!cgData || cgData.error) { showError(coinId, cgData && cgData.error ? cgData.error : '404'); return; }
 
-      if (!silent) { loadingStep('llama', 'done'); loadingStep('render', 'active'); }
+      if (!silent) { loadingStep('llama','done'); loadingStep('render','active'); }
 
       var md    = cgData.market_data || {};
       var links = cgData.links       || {};
 
-      /* Contratos */
-      var contracts = Object.entries(cgData.platforms || {})
-        .filter(function(p) { return p[1] && p[1].trim(); })
-        .sort(function(a, b) { return a[0].localeCompare(b[0]); })
-        .map(function(p) { return { network: p[0], address: p[1] }; });
-
-      /* Links sociais */
-      var twitterHandle  = links.twitter_screen_name;
-      var telegramHandle = links.telegram_channel_identifier;
-      var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
-      var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
-
-      /* TVL */
       var tvlValue = null;
-      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
-        tvlValue = llamaResult.value;
-      }
+      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') tvlValue = llamaResult.value;
 
-      /* Supply */
       var circ      = md.circulating_supply || null;
       var total     = md.total_supply       || null;
-      var pctFree   = (circ && total) ? (circ / total * 100) : null;
-      var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
+      var pctFree   = (circ && total) ? (circ/total*100) : null;
+      var pctLocked = pctFree != null  ? (100-pctFree)   : null;
+
+      var contracts = Object.entries(cgData.platforms || {})
+        .filter(function(p){ return p[1] && p[1].trim(); })
+        .sort(function(a,b){ return a[0].localeCompare(b[0]); })
+        .map(function(p){ return { network:p[0], address:p[1] }; });
+
+      var twitterHandle  = links.twitter_screen_name;
+      var telegramHandle = links.telegram_channel_identifier;
+      var discordUrl     = (links.chat_url || []).find(function(u){ return u && u.includes('discord'); });
+      var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
 
       var coinData = {
         name:   cgData.name,
@@ -2288,127 +1800,69 @@
         marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
         fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
         volume24h:   md.total_volume ? (md.total_volume.usd || 0) : 0,
-        volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd)
-                     ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
+        volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd) ? (md.total_volume.usd/md.market_cap.usd*100) : null,
         volume7d:    null,
         volume7dPct: null,
-        circulatingSupply: circ,
-        totalSupply:       total,
-        pctFree:           pctFree,
-        pctLocked:         pctLocked,
-        tvl:               tvlValue,
-        website:  links.homepage   ? (links.homepage[0] || null) : null,
-        twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
-        telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
-        discord:  discordUrl       || null,
-        github:   githubUrl        || null,
+        circulatingSupply: circ, totalSupply: total, pctFree: pctFree, pctLocked: pctLocked,
+        tvl: tvlValue,
+        website:  links.homepage   ? (links.homepage[0]  || null) : null,
+        twitter:  twitterHandle    ? 'https://twitter.com/'+twitterHandle  : null,
+        telegram: telegramHandle   ? 'https://t.me/'+telegramHandle        : null,
+        discord:  discordUrl || null, github: githubUrl || null,
         contracts: contracts
       };
 
-      if (!silent) loadingStep('render', 'done');
+      if (!silent) loadingStep('render','done');
       cacheSet(coinId, coinData);
       renderResult(coinData);
       if (!silent) showResult();
 
-      /* Mostra "..." no vol7D enquanto aguarda */
-      var v7pct = document.getElementById('s-vol7-pct');
-      var v7val = document.getElementById('s-vol7');
-      if (v7pct) { v7pct.textContent = '...'; v7pct.style.color = '#3a3a60'; }
-      if (v7val) { v7val.textContent = ''; }
-
-      /*
-        Agenda o vol7D para 3.5s depois.
-        Guardamos o timer em _vol7Timer para poder cancelar se o usuário
-        pesquisar outra moeda antes deste disparar.
-      */
+      /* Vol7D — agendado 3.5s depois para não colidir com urlCG no rate limit */
+      var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
       _vol7Timer = setTimeout(function() {
         _vol7Timer = null;
         fetchWithTimeout(urlVol7, 10000)
-          .then(function(r) {
-            if (r.status === 429) throw new Error('429');
-            if (!r.ok) throw new Error('sem vol7');
-            return r.json();
-          })
-          .then(function(chartData) {
-            if (!chartData || !chartData.total_volumes) throw new Error('sem dados');
-            var last7  = chartData.total_volumes.slice(-7);
-            var sum7d  = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
-            if (sum7d <= 0) throw new Error('volume zero');
-            var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
-            var pct7d   = (mcapUsd > 0) ? (sum7d / mcapUsd * 100) : null;
-
-            /* Só atualiza o DOM se ainda estiver mostrando a mesma moeda */
-            if (_currentCoinId !== coinId) return;
-
+          .then(function(r){ if (r.status === 429) throw new Error('429'); if (!r.ok) throw new Error('sem vol7'); return r.json(); })
+          .then(function(chart) {
+            if (!chart || !chart.total_volumes) throw new Error('sem dados');
+            var last7 = chart.total_volumes.slice(-7);
+            var sum7d = last7.reduce(function(acc,v){ return acc+(v[1]||0); }, 0);
+            if (sum7d <= 0) throw new Error('zero');
+            var pct7d = mcapUsd > 0 ? (sum7d/mcapUsd*100) : null;
+            if (_currentCoinId !== coinId) return; /* usuário já mudou de moeda */
+            var v7pct = document.getElementById('s-vol7-pct');
+            var v7val = document.getElementById('s-vol7');
             if (v7pct) {
-              v7pct.textContent = pct7d ? pct7d.toFixed(2) + '% do MCap' : '—';
-              if (pct7d >= 15)     v7pct.style.color = '#34d399';
-              else if (pct7d >= 5) v7pct.style.color = '#fbbf24';
-              else                 v7pct.style.color = '#f87171';
+              v7pct.textContent = pct7d ? pct7d.toFixed(2)+'% do MCap' : '—';
+              v7pct.style.color = pct7d >= 15 ? '#34d399' : pct7d >= 5 ? '#fbbf24' : '#f87171';
             }
             if (v7val) v7val.textContent = fmtUSD(sum7d);
-
-            /* Atualiza cache com vol7D completo */
-            coinData.volume7d    = sum7d;
-            coinData.volume7dPct = pct7d;
+            coinData.volume7d = sum7d; coinData.volume7dPct = pct7d;
             cacheSet(coinId, coinData);
           })
           .catch(function() {
             if (_currentCoinId !== coinId) return;
+            var v7pct = document.getElementById('s-vol7-pct');
             if (v7pct) { v7pct.textContent = '—'; v7pct.style.color = ''; }
-            if (v7val) { v7val.textContent = ''; }
           });
-      }, 3500); /* 3.5s após a chamada principal — respeita o rate limit */
-
-    }); /* fim do allSettled */
+      }, 3500);
+    });
   }
 
+  /* ══ DISPARO DA BUSCA ════════════════════════════════════════════ */
 
-  /* ════════════════════════════════════════════════════════════════
-     DISPARO DA BUSCA
-     triggerSearch() — valida o input e chama fetchCoinData().
-     Chamada pelo clique no botão "Analisar" e pelos chips de atalho.
-     ════════════════════════════════════════════════════════════════ */
   function triggerSearch(coinId) {
-    /* Remove espaços e converte para minúsculas (padrão CoinGecko) */
     var id = (coinId || document.getElementById('cryptoInput').value).trim().toLowerCase();
-
-    if (!id) {
-      /* Campo vazio — pisca o input para indicar o erro */
-      var inp = document.getElementById('cryptoInput');
-      inp.style.outline = '2px solid #f87171';
-      setTimeout(function () { inp.style.outline = ''; }, 1200);
-      return;
-    }
-
+    if (!id) { var inp = document.getElementById('cryptoInput'); inp.style.outline = '2px solid #f87171'; setTimeout(function(){ inp.style.outline = ''; }, 1200); return; }
     fetchCoinData(id);
   }
 
-  /* ── Listener do botão "Analisar" ── */
-  document.getElementById('btnSearch').addEventListener('click', function () {
-    triggerSearch();
-  });
-
-  /* ── Enter no campo de busca também dispara (quando nenhum item do dropdown está ativo) ── */
-  document.getElementById('cryptoInput').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      /* Pequeno delay para o autocomplete processar a seleção primeiro */
-      setTimeout(function () { triggerSearch(); }, 80);
-    }
-  });
-
-  /*
-    ── Chips de atalho rápido ──
-    Cada chip tem data-id com o ID exato da CoinGecko.
-    Ao clicar: preenche o input E dispara a busca imediatamente.
-  */
-  document.querySelectorAll('.chip').forEach(function (chip) {
-    chip.addEventListener('click', function () {
+  document.getElementById('btnSearch').addEventListener('click', function(){ triggerSearch(); });
+  document.getElementById('cryptoInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') setTimeout(function(){ triggerSearch(); }, 80); });
+  document.querySelectorAll('.chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
       var id = chip.getAttribute('data-id');
-      if (id) {
-        document.getElementById('cryptoInput').value = id;
-        triggerSearch(id);
-      }
+      if (id) { document.getElementById('cryptoInput').value = id; triggerSearch(id); }
     });
   });
 
