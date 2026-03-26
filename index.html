@@ -1726,6 +1726,9 @@
         'Total Value Locked: ' + fmtUSD(d.tvl) + '.\nValor depositado nos contratos do protocolo. Fonte: DeFiLlama.');
     }
 
+    /* Atualiza a barra de fórmula se um card ainda estiver ativo */
+    if (typeof refreshFormula === 'function') refreshFormula();
+
   } /* fim renderResult */
 
   /* ══ CACHE ═══════════════════════════════════════════════════════
@@ -2035,7 +2038,13 @@
   */
   var formulaEl  = document.getElementById('stat-formula');
   var formulaTxt = document.getElementById('stat-formula-text');
-  var defaultMsg = 'Passe o mouse em um card para ver a fórmula';
+  var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  var defaultMsg = isTouchDevice
+    ? 'Toque em um card para ver a fórmula'
+    : 'Passe o mouse em um card para ver a fórmula';
+
+  /* Guarda referência do card ativo (hover ou tap) para reexibir após refresh */
+  var _activeBox = null;
 
   function showFormula(text) {
     if (!formulaTxt) return;
@@ -2043,12 +2052,25 @@
     if (formulaEl) formulaEl.classList.toggle('active', !!text);
   }
 
+  /*
+    refreshFormula() — chamada pelo renderResult após cada atualização.
+    Se um card estiver ativo (hover ou tap), relê o data-tip atualizado
+    e exibe o texto com os novos valores da API.
+  */
+  function refreshFormula() {
+    if (_activeBox) showFormula(_activeBox.getAttribute('data-tip'));
+  }
+
+  if (formulaTxt) formulaTxt.textContent = defaultMsg;
+
   /* Desktop — hover */
   document.querySelectorAll('.stat-box[data-tip]').forEach(function(box) {
     box.addEventListener('mouseenter', function() {
+      _activeBox = box;
       showFormula(box.getAttribute('data-tip'));
     });
     box.addEventListener('mouseleave', function() {
+      _activeBox = null;
       showFormula('');
       if (formulaTxt) formulaTxt.textContent = defaultMsg;
       if (formulaEl) formulaEl.classList.remove('active');
@@ -2060,13 +2082,14 @@
   document.querySelectorAll('.stat-box[data-tip]').forEach(function(box) {
     box.addEventListener('touchstart', function(e) {
       if (_lastTapped === box) {
-        /* segundo tap no mesmo card → fecha */
         _lastTapped = null;
+        _activeBox  = null;
         showFormula('');
         if (formulaTxt) formulaTxt.textContent = defaultMsg;
         if (formulaEl) formulaEl.classList.remove('active');
       } else {
         _lastTapped = box;
+        _activeBox  = box;
         showFormula(box.getAttribute('data-tip'));
         e.stopPropagation();
       }
@@ -2076,6 +2099,7 @@
   /* Toca fora de qualquer card → fecha */
   document.addEventListener('touchstart', function() {
     _lastTapped = null;
+    _activeBox  = null;
     showFormula('');
     if (formulaTxt) formulaTxt.textContent = defaultMsg;
     if (formulaEl) formulaEl.classList.remove('active');
