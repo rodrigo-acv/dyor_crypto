@@ -1986,10 +1986,12 @@
     fetchCoinData(coinId, true /* silent */);
   }
 
-  /* Botão manual de refresh — chamado pelo onclick do HTML */
+  /* Botão manual de refresh — chama a função global refreshData() do onclick do HTML */
   function refreshData() {
     if (_currentCoinId) {
-      startRefreshTimer(); /* reinicia o countdown do zero */
+      /* Invalida o cache para forçar nova chamada à API */
+      cacheInvalidate(_currentCoinId);
+      startRefreshTimer();
       silentRefetch(_currentCoinId);
     }
   }
@@ -2102,25 +2104,77 @@
 
 
   /* ════════════════════════════════════════════════════════════════
+     CACHE DE PESQUISAS
+     ════════════════════════════════════════════════════════════════
+
+     Por que cache?
+     ─────────────
+     O CoinGecko gratuito permite ~30 calls/min. Cada pesquisa faz
+     2 chamadas (dados gerais + market_chart 7D). Com cache, a segunda
+     vez que o usuário pesquisa a mesma moeda é INSTANTÂNEA e não
+     consome nenhuma chamada à API.
+
+     Como funciona:
+     ─────────────
+     • Cada resultado é salvo em _cache[coinId] com um timestamp
+     • Antes de chamar a API, verificamos se os dados ainda são frescos
+     • TTL de 3 minutos (mesmo intervalo do auto-refresh)
+     • O botão ↻ "Atualizar" ignora o cache (força nova chamada)
+     • Ao voltar para a home e pesquisar de novo → usa cache se válido
+
+     Estrutura de cada entrada:
+       _cache['ethereum'] = {
+         data: { ...coinData },   ← objeto completo passado ao renderResult
+         ts:   1711234567890      ← timestamp em ms do momento da busca
+       }
+  */
+  var _cache     = {};          /* { coinId: { data, ts } }  */
+  var CACHE_TTL  = 3 * 60 * 1000; /* 3 minutos em milissegundos */
+
+  /* Retorna os dados do cache se ainda frescos, ou null se expirado/inexistente */
+  function cacheGet(coinId) {
+    var entry = _cache[coinId];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > CACHE_TTL) {
+      delete _cache[coinId]; /* limpa entrada expirada */
+      return null;
+    }
+    return entry.data;
+  }
+
+  /* Salva um resultado no cache com timestamp atual */
+  function cacheSet(coinId, data) {
+    _cache[coinId] = { data: data, ts: Date.now() };
+  }
+
+  /* Invalida o cache de uma moeda (usado pelo botão ↻ Atualizar) */
+  function cacheInvalidate(coinId) {
+    delete _cache[coinId];
+  }
+
+  /* ════════════════════════════════════════════════════════════════
      BUSCA NA API
-     fetchCoinData() — busca dados em CoinGecko + DeFiLlama em paralelo.
-
-     FLUXO:
-       1. Exibe loading com etapa "CoinGecko" ativa
-       2. Dispara ambas as chamadas em paralelo (Promise.allSettled)
-       3. Marca etapa "DeFiLlama" quando CoinGecko responde
-       4. Monta o objeto de dados e chama renderResult()
-       5. Marca etapa "Montando" e exibe o resultado
-
-     TRATAMENTO DE ERROS:
-       • 429 → mensagem de rate limit com orientação clara
-       • Network error → mensagem de conexão
-       • 404 → moeda não encontrada
-       • DeFiLlama falha → TVL fica null (não bloqueia o resultado)
      ════════════════════════════════════════════════════════════════ */
   function fetchCoinData(coinId, silent) {
     _currentCoinId = coinId;
-    if (!silent) showLoading(coinId);
+
+    /*
+      Verifica o cache ANTES de chamar a API.
+      Se os dados estiverem frescos (< 3 min), renderiza imediatamente.
+      Modo silent nunca usa cache (sempre busca dados novos do servidor).
+    */
+    if (!silent) {
+      var cached = cacheGet(coinId);
+      if (cached) {
+        /* Cache hit — resultado instantâneo! */
+        renderResult(cached);
+        showResult();
+        /* Reinicia o countdown do refresh para sincronizar com os dados */
+        startRefreshTimer();
+        return;
+      }
+      showLoading(coinId);
+    }
 
     var urlCG    = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
                  + '?localization=false&tickers=false&market_data=true'
@@ -2219,6 +2273,11 @@
       /* ── Exibe o resultado IMEDIATAMENTE com os dados disponíveis ──
          O vol7D fica com "..." e é preenchido após 2s.               */
       if (!silent) loadingStep('render', 'done');
+
+      /* Salva no cache ANTES de renderizar — próxima pesquisa desta
+         moeda será instantânea enquanto os dados forem frescos (3 min) */
+      cacheSet(coinId, coinData);
+
       renderResult(coinData);
       if (!silent) showResult();
 
@@ -2255,6 +2314,11 @@
               else                 v7pct.style.color = '#f87171'; /* vermelho */
             }
             if (v7val) v7val.textContent = fmtUSD(sum7d);
+
+            /* Atualiza o cache com o vol7D agora completo */
+            coinData.volume7d    = sum7d;
+            coinData.volume7dPct = pct7d;
+            cacheSet(coinId, coinData);
           })
           .catch(function() {
             /* Se falhar (429, timeout, etc.) mostra "—" sem quebrar o resto */
