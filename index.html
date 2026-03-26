@@ -2104,39 +2104,108 @@
 
 
   /* ════════════════════════════════════════════════════════════════
+     FILA DE CHAMADAS AO COINGECKO
+     ════════════════════════════════════════════════════════════════
+
+     POR QUE UMA FILA?
+     ─────────────────
+     O plano gratuito do CoinGecko permite ~30 calls/min, ou seja,
+     1 chamada a cada 2 segundos. Cada pesquisa faz 2 chamadas:
+       1ª → dados gerais (/coins/{id})
+       2ª → volume 7D   (/coins/{id}/market_chart)
+
+     Com 3 pesquisas rápidas = 6 chamadas em poucos segundos → 429.
+
+     A fila garante que NENHUMA chamada ao CoinGecko sai com menos
+     de 2.1s de intervalo da anterior, independentemente de quantas
+     pesquisas o usuário fizer. As chamadas simplesmente aguardam
+     sua vez na fila sem mostrar erro.
+
+     FUNCIONAMENTO:
+       cgQueue(fn) → enfileira uma função que retorna uma Promise
+       O processador interno despacha uma a cada 2.1s
+       Retorna uma Promise que resolve quando a chamada terminar
+
+     EXEMPLO:
+       cgQueue(function() { return fetch(url); })
+         .then(function(r) { ... });  ← funciona igual ao fetch normal
+  */
+  var _cgQueue       = [];      /* fila de { fn, resolve, reject } */
+  var _cgBusy        = false;   /* true enquanto processa uma chamada */
+  var _cgLastCall    = 0;       /* timestamp da última chamada despachada */
+  var CG_MIN_INTERVAL = 2100;   /* ms mínimos entre chamadas (2.1s) */
+
+  /*
+    cgQueue(fn) — enfileira uma chamada ao CoinGecko.
+    fn deve ser uma função que retorna uma Promise (ex: fetch).
+    Retorna uma Promise que resolve/rejeita com o resultado de fn.
+  */
+  function cgQueue(fn) {
+    return new Promise(function(resolve, reject) {
+      _cgQueue.push({ fn: fn, resolve: resolve, reject: reject });
+      cgProcess();
+    });
+  }
+
+  /* Processador interno da fila — despacha uma entrada por vez */
+  function cgProcess() {
+    if (_cgBusy || _cgQueue.length === 0) return;
+
+    var now      = Date.now();
+    var elapsed  = now - _cgLastCall;
+    var wait     = Math.max(0, CG_MIN_INTERVAL - elapsed);
+
+    _cgBusy = true;
+
+    setTimeout(function() {
+      var entry = _cgQueue.shift(); /* pega o próximo da fila */
+      if (!entry) { _cgBusy = false; return; }
+
+      _cgLastCall = Date.now();
+
+      entry.fn()
+        .then(function(result) {
+          entry.resolve(result);
+        })
+        .catch(function(err) {
+          entry.reject(err);
+        })
+        .finally(function() {
+          _cgBusy = false;
+          cgProcess(); /* processa o próximo item da fila */
+        });
+    }, wait);
+  }
+
+  /*
+    cgFetch(url, timeoutMs) — wrapper de fetchWithTimeout que passa
+    pela fila. Use no lugar de fetchWithTimeout para URLs do CoinGecko.
+  */
+  function cgFetch(url, timeoutMs) {
+    return cgQueue(function() {
+      return fetchWithTimeout(url, timeoutMs || 15000);
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════
      CACHE DE PESQUISAS
      ════════════════════════════════════════════════════════════════
 
-     Por que cache?
-     ─────────────
-     O CoinGecko gratuito permite ~30 calls/min. Cada pesquisa faz
-     2 chamadas (dados gerais + market_chart 7D). Com cache, a segunda
-     vez que o usuário pesquisa a mesma moeda é INSTANTÂNEA e não
-     consome nenhuma chamada à API.
+     Guarda o resultado completo de cada pesquisa por 3 minutos.
+     Na segunda pesquisa da mesma moeda: resultado instantâneo,
+     zero chamadas à API.
 
-     Como funciona:
-     ─────────────
-     • Cada resultado é salvo em _cache[coinId] com um timestamp
-     • Antes de chamar a API, verificamos se os dados ainda são frescos
-     • TTL de 3 minutos (mesmo intervalo do auto-refresh)
-     • O botão ↻ "Atualizar" ignora o cache (força nova chamada)
-     • Ao voltar para a home e pesquisar de novo → usa cache se válido
-
-     Estrutura de cada entrada:
-       _cache['ethereum'] = {
-         data: { ...coinData },   ← objeto completo passado ao renderResult
-         ts:   1711234567890      ← timestamp em ms do momento da busca
-       }
+     O botão ↻ Atualizar invalida o cache e força nova chamada.
   */
-  var _cache     = {};          /* { coinId: { data, ts } }  */
-  var CACHE_TTL  = 3 * 60 * 1000; /* 3 minutos em milissegundos */
+  var _cache     = {};             /* { coinId: { data, ts } }     */
+  var CACHE_TTL  = 3 * 60 * 1000; /* 3 minutos em milissegundos   */
 
-  /* Retorna os dados do cache se ainda frescos, ou null se expirado/inexistente */
+  /* Retorna os dados do cache se ainda frescos, ou null se expirado */
   function cacheGet(coinId) {
     var entry = _cache[coinId];
     if (!entry) return null;
     if (Date.now() - entry.ts > CACHE_TTL) {
-      delete _cache[coinId]; /* limpa entrada expirada */
+      delete _cache[coinId];
       return null;
     }
     return entry.data;
@@ -2184,10 +2253,11 @@
                  + '/market_chart?vs_currency=usd&days=7&interval=daily';
 
     /* ── ETAPA 1: CoinGecko principal + DeFiLlama em paralelo ──────
-       DeFiLlama é domínio diferente, não conflita com CoinGecko.
-       O market_chart (vol7) fica para depois para evitar 429.        */
+       Ambas passam pela fila cgFetch — o espaçamento mínimo de 2.1s
+       é garantido automaticamente pela fila, sem setTimeout manual.
+       DeFiLlama é domínio diferente e não passa pela fila CG.        */
     Promise.allSettled([
-      fetchWithTimeout(urlCG, 15000).then(function(r) {
+      cgFetch(urlCG, 15000).then(function(r) {
         if (!silent) { loadingStep('cg', 'done'); loadingStep('llama', 'active'); }
         if (r.status === 429) throw new Error('429');
         if (r.status === 404) throw new Error('404');
@@ -2287,11 +2357,10 @@
       if (v7pct) { v7pct.textContent = '...'; v7pct.style.color = '#3a3a60'; }
       if (v7val) { v7val.textContent = ''; }
 
-      /* ── ETAPA 2: market_chart 7D (após 2s para respeitar rate limit) ──
-         O plano gratuito do CoinGecko = 30 calls/min = 1 call a cada 2s.
-         Como já fizemos 1 call (urlCG), precisamos esperar 2s antes do próximo. */
-      setTimeout(function() {
-        fetchWithTimeout(urlVol7, 10000)
+      /* ── ETAPA 2: market_chart 7D via fila ────────────────────────
+         cgFetch enfileira a chamada e aguarda o intervalo mínimo de
+         2.1s automaticamente — sem setTimeout manual necessário.     */
+      cgFetch(urlVol7, 10000)
           .then(function(r) {
             if (r.status === 429) throw new Error('429');
             if (!r.ok) throw new Error('sem vol7');
@@ -2325,7 +2394,6 @@
             if (v7pct) { v7pct.textContent = '—'; v7pct.style.color = ''; }
             if (v7val) { v7val.textContent = ''; }
           });
-      }, 2000); /* 2s de delay antes do market_chart */
 
     }); /* fim do allSettled */
   }
