@@ -2119,159 +2119,151 @@
        • DeFiLlama falha → TVL fica null (não bloqueia o resultado)
      ════════════════════════════════════════════════════════════════ */
   function fetchCoinData(coinId, silent) {
-    /*
-      silent=true → chamada do auto-refresh (sem spinner, sem esconder a home).
-      silent=false/undefined → chamada normal (mostra spinner, troca de tela).
-    */
-    _currentCoinId = coinId; /* guarda para o auto-refresh usar */
-
+    _currentCoinId = coinId;
     if (!silent) showLoading(coinId);
 
-    var urlCG = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
-              + '?localization=false&tickers=false&market_data=true'
-              + '&community_data=true&developer_data=false&sparkline=false';
-
-    var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
+    var urlCG    = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
+                 + '?localization=false&tickers=false&market_data=true'
+                 + '&community_data=true&developer_data=false&sparkline=false';
+    var urlLlama = 'https://api.llama.fi/tvl/'    + encodeURIComponent(coinId);
     var urlVol7  = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
                  + '/market_chart?vs_currency=usd&days=7&interval=daily';
 
-    /*
-      ESTRATÉGIA SEQUENCIAL PARA EVITAR 429:
-      ─────────────────────────────────────
-      O plano gratuito do CoinGecko bloqueia quando recebe 2 requests
-      simultâneos do mesmo cliente. Por isso NÃO podemos disparar
-      urlCG e urlVol7 ao mesmo tempo.
-
-      ETAPA 1 → CoinGecko principal (aguarda resposta completa)
-      ETAPA 2 → market_chart 7D + DeFiLlama em paralelo
-               (DeFiLlama é outro domínio, não conflita com CoinGecko)
-
-      Isso acrescenta apenas ~0.5s ao tempo total, mas elimina o 429.
-    */
-
-    /* ── ETAPA 1: CoinGecko dados gerais ─────────────────────────── */
-    fetchWithTimeout(urlCG, 15000)
-      .then(function(r) {
+    /* ── ETAPA 1: CoinGecko principal + DeFiLlama em paralelo ──────
+       DeFiLlama é domínio diferente, não conflita com CoinGecko.
+       O market_chart (vol7) fica para depois para evitar 429.        */
+    Promise.allSettled([
+      fetchWithTimeout(urlCG, 15000).then(function(r) {
         if (!silent) { loadingStep('cg', 'done'); loadingStep('llama', 'active'); }
         if (r.status === 429) throw new Error('429');
         if (r.status === 404) throw new Error('404');
         if (!r.ok) throw new Error('HTTP_' + r.status);
         return r.json();
+      }),
+      fetchWithTimeout(urlLlama, 8000).then(function(r) {
+        if (!r.ok) throw new Error('sem TVL');
+        return r.json();
       })
-      .then(function(cgData) {
+    ]).then(function(results) {
+      var cgResult    = results[0];
+      var llamaResult = results[1];
 
-        if (!cgData || cgData.error) {
-          showError(coinId, cgData && cgData.error ? cgData.error : '404');
-          return;
-        }
+      /* CoinGecko falhou — para tudo */
+      if (cgResult.status === 'rejected') {
+        showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha na API');
+        return;
+      }
+      var cgData = cgResult.value;
+      if (!cgData || cgData.error) {
+        showError(coinId, cgData && cgData.error ? cgData.error : '404');
+        return;
+      }
 
-        var md    = cgData.market_data || {};
-        var links = cgData.links       || {};
+      if (!silent) { loadingStep('llama', 'done'); loadingStep('render', 'active'); }
 
-        /*
-          Delay de 600ms antes da segunda chamada ao CoinGecko (market_chart).
-          Sem ele, as duas requisições chegam ao servidor muito próximas
-          e a segunda recebe 429 (rate limit), fazendo o vol7D ficar "—".
-        */
-        setTimeout(function() {
+      var md    = cgData.market_data || {};
+      var links = cgData.links       || {};
 
-        /* ── ETAPA 2: market_chart 7D + DeFiLlama em paralelo ────── */
-        Promise.allSettled([
-          fetchWithTimeout(urlVol7, 10000).then(function(r) {
+      /* Contratos */
+      var contracts = Object.entries(cgData.platforms || {})
+        .filter(function(p) { return p[1] && p[1].trim(); })
+        .sort(function(a, b) { return a[0].localeCompare(b[0]); })
+        .map(function(p) { return { network: p[0], address: p[1] }; });
+
+      /* Links sociais */
+      var twitterHandle  = links.twitter_screen_name;
+      var telegramHandle = links.telegram_channel_identifier;
+      var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
+      var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
+
+      /* TVL */
+      var tvlValue = null;
+      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
+        tvlValue = llamaResult.value;
+      }
+
+      /* Supply */
+      var circ      = md.circulating_supply || null;
+      var total     = md.total_supply       || null;
+      var pctFree   = (circ && total) ? (circ / total * 100) : null;
+      var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
+
+      /* Objeto de dados (vol7 = null por enquanto, chega depois) */
+      var coinData = {
+        name:   cgData.name,
+        symbol: (cgData.symbol || '').toUpperCase(),
+        rank:   cgData.market_cap_rank || '—',
+        image:  cgData.image ? (cgData.image.large || cgData.image.small || '') : '',
+        price:          md.current_price ? (md.current_price.usd || 0) : 0,
+        priceChange24h: md.price_change_percentage_24h || 0,
+        marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
+        fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
+        volume24h:   md.total_volume ? (md.total_volume.usd || 0) : 0,
+        volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd)
+                     ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
+        volume7d:    null,   /* atualizado após 2s */
+        volume7dPct: null,   /* atualizado após 2s */
+        circulatingSupply: circ,
+        totalSupply:       total,
+        pctFree:           pctFree,
+        pctLocked:         pctLocked,
+        tvl:               tvlValue,
+        website:  links.homepage   ? (links.homepage[0] || null) : null,
+        twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
+        telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
+        discord:  discordUrl       || null,
+        github:   githubUrl        || null,
+        contracts: contracts
+      };
+
+      /* ── Exibe o resultado IMEDIATAMENTE com os dados disponíveis ──
+         O vol7D fica com "..." e é preenchido após 2s.               */
+      if (!silent) loadingStep('render', 'done');
+      renderResult(coinData);
+      if (!silent) showResult();
+
+      /* Mostra "..." no vol7D enquanto aguarda a segunda chamada */
+      var v7pct = document.getElementById('s-vol7-pct');
+      var v7val = document.getElementById('s-vol7');
+      if (v7pct) { v7pct.textContent = '...'; v7pct.style.color = '#3a3a60'; }
+      if (v7val) { v7val.textContent = ''; }
+
+      /* ── ETAPA 2: market_chart 7D (após 2s para respeitar rate limit) ──
+         O plano gratuito do CoinGecko = 30 calls/min = 1 call a cada 2s.
+         Como já fizemos 1 call (urlCG), precisamos esperar 2s antes do próximo. */
+      setTimeout(function() {
+        fetchWithTimeout(urlVol7, 10000)
+          .then(function(r) {
+            if (r.status === 429) throw new Error('429');
             if (!r.ok) throw new Error('sem vol7');
             return r.json();
-          }),
-          fetchWithTimeout(urlLlama, 8000).then(function(r) {
-            if (!r.ok) throw new Error('sem TVL');
-            return r.json();
           })
-        ]).then(function(results) {
-          var vol7Result  = results[0];
-          var llamaResult = results[1];
-
-          if (!silent) { loadingStep('llama', 'done'); loadingStep('render', 'active'); }
-
-          /* Contratos */
-          var contracts = Object.entries(cgData.platforms || {})
-            .filter(function(p) { return p[1] && p[1].trim(); })
-            .sort(function(a, b) { return a[0].localeCompare(b[0]); })
-            .map(function(p) { return { network: p[0], address: p[1] }; });
-
-          /* Links sociais */
-          var twitterHandle  = links.twitter_screen_name;
-          var telegramHandle = links.telegram_channel_identifier;
-          var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
-          var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
-
-          /* TVL */
-          var tvlValue = null;
-          if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
-            tvlValue = llamaResult.value;
-          }
-
-          /* Volume 7D */
-          var volume7d = null, volume7dPct = null;
-          if (vol7Result.status === 'fulfilled' && vol7Result.value && vol7Result.value.total_volumes) {
-            var last7 = vol7Result.value.total_volumes.slice(-7);
+          .then(function(chartData) {
+            if (!chartData || !chartData.total_volumes) { throw new Error('sem dados'); }
+            var last7 = chartData.total_volumes.slice(-7);
             var sum7d = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
-            if (sum7d > 0) {
-              volume7d = sum7d;
-              var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
-              if (mcapUsd > 0) volume7dPct = (sum7d / mcapUsd) * 100;
+            if (sum7d <= 0) throw new Error('volume zero');
+
+            var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
+            var pct7d   = (mcapUsd > 0) ? (sum7d / mcapUsd * 100) : null;
+
+            /* Atualiza o DOM diretamente (sem re-renderizar tudo) */
+            if (v7pct) {
+              v7pct.textContent = pct7d ? pct7d.toFixed(2) + '% do MCap' : '—';
+              if (pct7d >= 15)     v7pct.style.color = '#34d399'; /* verde  */
+              else if (pct7d >= 5) v7pct.style.color = '#fbbf24'; /* âmbar  */
+              else                 v7pct.style.color = '#f87171'; /* vermelho */
             }
-          }
+            if (v7val) v7val.textContent = fmtUSD(sum7d);
+          })
+          .catch(function() {
+            /* Se falhar (429, timeout, etc.) mostra "—" sem quebrar o resto */
+            if (v7pct) { v7pct.textContent = '—'; v7pct.style.color = ''; }
+            if (v7val) { v7val.textContent = ''; }
+          });
+      }, 2000); /* 2s de delay antes do market_chart */
 
-          /* Supply */
-          var circ      = md.circulating_supply || null;
-          var total     = md.total_supply       || null;
-          var pctFree   = (circ && total) ? (circ / total * 100) : null;
-          var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
-
-          /* Objeto final */
-          var coinData = {
-            name:   cgData.name,
-            symbol: (cgData.symbol || '').toUpperCase(),
-            rank:   cgData.market_cap_rank || '—',
-            image:  cgData.image ? (cgData.image.large || cgData.image.small || '') : '',
-            price:          md.current_price ? (md.current_price.usd || 0) : 0,
-            priceChange24h: md.price_change_percentage_24h || 0,
-            marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
-            fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
-            volume24h:   md.total_volume ? (md.total_volume.usd || 0) : 0,
-            volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd)
-                         ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
-            volume7d:    volume7d,
-            volume7dPct: volume7dPct,
-            circulatingSupply: circ,
-            totalSupply:       total,
-            pctFree:           pctFree,
-            pctLocked:         pctLocked,
-            tvl:               tvlValue,
-            website:  links.homepage   ? (links.homepage[0] || null) : null,
-            twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
-            telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
-            discord:  discordUrl       || null,
-            github:   githubUrl        || null,
-            contracts: contracts
-          };
-
-          if (!silent) loadingStep('render', 'done');
-          renderResult(coinData);
-          if (!silent) showResult();
-
-        }).catch(function(err2) {
-          /* Erro na ETAPA 2 (vol7 ou llama) — não deveria acontecer
-             pois usamos allSettled, mas por segurança tratamos aqui */
-          showError(coinId, err2 ? (err2.message || 'Erro inesperado') : 'Erro inesperado');
-        });
-
-        }, 600); /* ← fim do delay de 600ms antes da ETAPA 2 */
-      })
-      .catch(function(err) {
-        /* Erro na ETAPA 1 (CoinGecko principal) */
-        var msg = err ? (err.message || '') : '';
-        showError(coinId, msg || 'Falha na API');
-      });
+    }); /* fim do allSettled */
   }
 
 
