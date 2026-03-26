@@ -210,6 +210,25 @@
       color: var(--res-text-dim);
     }
 
+    /* Etapas de progresso dentro do loading — mostram o que está acontecendo */
+    .loading-steps {
+      display: flex; flex-direction: column; gap: 5px;
+      margin-top: 4px;
+    }
+    .loading-step {
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px; color: #2e2e55;
+      transition: color 0.3s ease;
+    }
+    .loading-step.done   { color: #34d399; }  /* concluído → verde  */
+    .loading-step.active { color: #a78bfa; }  /* em andamento → roxo */
+    .loading-step-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: currentColor; flex-shrink: 0;
+    }
+    .loading-step.active .loading-step-dot { animation: pulse 0.8s ease-in-out infinite; }
+
     /* ══════════════════════════════════════════════════════════════
        BARRA DE TOPO DO RESULTADO
        Mostra data/hora da consulta e link para a fonte dos dados.
@@ -562,12 +581,26 @@
       AGULHA — animação via CSS transform (não atributo SVG).
       transform-origin: 0 0 porque o grupo pai já está transladado
       para o centro do pivô via SVG transform="translate(CX, CY)".
-      O cubic-bezier dá o efeito "mola" na chegada.
+
+      ANIMAÇÃO DE BALANÇO:
+      Usamos @keyframes "needle-swing" para simular inércia física:
+      a agulha passa um pouco do ponto alvo, recua, e para suavemente.
+      Isso dá o efeito de "velocímetro real" na chegada.
+      O cubic-bezier seria simples; o @keyframes dá controle total.
     */
     #needle-rotate {
       transform-origin: 0px 0px;
-      transition: transform 0.9s cubic-bezier(0.34, 1.45, 0.64, 1);
       transform: rotate(180deg); /* início: aponta para a esquerda (gauge 0%) */
+    }
+
+    /* Animação de balanço — aplicada via JS quando o valor chega */
+    @keyframes needle-arrive {
+      /* A agulha parte do ângulo atual (definido inline pelo JS),
+         ultrapassa +8°, recua -4°, e estabiliza no alvo (0% = posição final) */
+      0%   { transform: var(--needle-from); }  /* posição anterior        */
+      60%  { transform: var(--needle-to-over); } /* ultrapassa 8°          */
+      80%  { transform: var(--needle-to-back); } /* recua 4°               */
+      100% { transform: var(--needle-to); }      /* estabiliza no alvo     */
     }
 
     /* Painel abaixo do gauge: valor (grande) + categoria (pequena) */
@@ -640,7 +673,21 @@
   <div id="loading-screen">
     <div class="loading-spinner"></div>
     <div class="loading-coin-name" id="loading-coin-name">Buscando dados...</div>
-    <div class="loading-sub">Consultando CoinGecko + DeFiLlama</div>
+    <!-- Etapas de progresso — o JS marca cada uma conforme avança -->
+    <div class="loading-steps">
+      <div class="loading-step" id="lstep-cg">
+        <div class="loading-step-dot"></div>
+        <span id="lstep-cg-text">Conectando à CoinGecko...</span>
+      </div>
+      <div class="loading-step" id="lstep-llama">
+        <div class="loading-step-dot"></div>
+        <span>Buscando TVL (DeFiLlama)...</span>
+      </div>
+      <div class="loading-step" id="lstep-render">
+        <div class="loading-step-dot"></div>
+        <span>Montando dashboard...</span>
+      </div>
+    </div>
   </div>
 
 
@@ -1504,20 +1551,57 @@
     animateGauge(mcap) — atualiza o velocímetro com o market cap da API.
     Chamada por renderResult() a cada nova busca.
 
+    ANIMAÇÃO DE BALANÇO (efeito velocímetro real):
+    Em vez de usar CSS transition simples, usamos @keyframes com
+    variáveis CSS (--needle-from, --needle-to, etc.) para controlar
+    os 4 pontos da animação: partida → ultrapassagem → recuo → parada.
+
     Parâmetro: mcap → número em USD (ex: 51090000000 para Solana)
   */
   function animateGauge(mcap) {
-    var stage   = gaugeGetStage(mcap);
-    var angle   = gaugeAngle(mcap);
-
-    /* Rotação da agulha:
-       rotate(180°) → aponta esq = mínimo do gauge
-       rotate(270°) → aponta cima = meio do gauge
-       rotate(360°) → aponta dir = máximo do gauge
-       Fórmula: CSS rotate = 180 + ânguloGauge                    */
+    var stage    = gaugeGetStage(mcap);
+    var angle    = gaugeAngle(mcap);
     var cssAngle = 180 + angle;
+
     var needleEl = document.getElementById('needle-rotate');
-    if (needleEl) needleEl.style.transform = 'rotate(' + cssAngle + 'deg)';
+    if (needleEl) {
+      /*
+        Pega o ângulo atual antes de atualizar (para a animação partir daí).
+        Extrai o número de "rotate(Xdeg)" via regex.
+      */
+      var currentTransform = needleEl.style.transform || 'rotate(180deg)';
+      var fromMatch = currentTransform.match(/rotate\(([^d]+)deg\)/);
+      var fromAngle = fromMatch ? parseFloat(fromMatch[1]) : 180;
+
+      /*
+        Define os 4 pontos da animação como variáveis CSS:
+          --needle-from     → posição de partida (ângulo anterior)
+          --needle-to-over  → ultrapassa 8° além do alvo (inércia)
+          --needle-to-back  → recua 4° (mola)
+          --needle-to       → posição final (alvo real)
+      */
+      needleEl.style.setProperty('--needle-from',    'rotate(' + fromAngle           + 'deg)');
+      needleEl.style.setProperty('--needle-to-over', 'rotate(' + (cssAngle + 8)      + 'deg)');
+      needleEl.style.setProperty('--needle-to-back', 'rotate(' + (cssAngle - 4)      + 'deg)');
+      needleEl.style.setProperty('--needle-to',      'rotate(' + cssAngle            + 'deg)');
+
+      /*
+        Remove e reaplica a animação para garantir que reinicia mesmo
+        que o ângulo seja o mesmo da busca anterior.
+        O setTimeout(0) força o browser a processar o "remove" antes do "add".
+      */
+      needleEl.style.animation = 'none';
+      needleEl.style.transform = 'rotate(' + fromAngle + 'deg)';
+      setTimeout(function() {
+        needleEl.style.animation = 'needle-arrive 1.1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards';
+        /* Após a animação terminar, fixa o transform final e limpa o animation
+           para evitar que futuras mudanças de estilo reiniciem o keyframe */
+        setTimeout(function() {
+          needleEl.style.animation = 'none';
+          needleEl.style.transform = 'rotate(' + cssAngle + 'deg)';
+        }, 1150);
+      }, 20);
+    }
 
     /* Market cap em destaque (grande, mono, cor da categoria) */
     var valEl = document.getElementById('gauge-val');
@@ -1706,14 +1790,29 @@
 
 
   /* ════════════════════════════════════════════════════════════════
+     CONTROLE DAS ETAPAS DE LOADING
+     Marca visualmente cada etapa: pendente → active → done
+     ════════════════════════════════════════════════════════════════ */
+  function loadingStep(id, state) {
+    /* state: 'active' | 'done' | '' (pendente) */
+    var el = document.getElementById('lstep-' + id);
+    if (el) { el.className = 'loading-step ' + state; }
+  }
+  function resetLoadingSteps() {
+    ['cg', 'llama', 'render'].forEach(function(id) { loadingStep(id, ''); });
+  }
+
+  /* ════════════════════════════════════════════════════════════════
      CONTROLE DE TELAS
-     showLoading() → exibe spinner
+     showLoading() → exibe spinner + etapas
      showResult()  → esconde home, esconde spinner, exibe resultado
-     goBack()      → volta para a home (chamado pelo botão "← Nova Pesquisa")
+     goBack()      → volta para a home
      ════════════════════════════════════════════════════════════════ */
   function showLoading(coinName) {
     document.getElementById('loading-coin-name').textContent =
-      coinName ? 'Buscando ' + coinName + '...' : 'Buscando dados...';
+      coinName ? coinName : 'Buscando dados...';
+    resetLoadingSteps();
+    loadingStep('cg', 'active');
     document.getElementById('loading-screen').classList.add('active');
   }
 
@@ -1725,45 +1824,107 @@
     document.getElementById('page-search').style.display = 'none';
     document.getElementById('page-result').style.display = 'block';
     hideLoading();
-    /* Volta para o topo da página */
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  /* goBack() — declarado globalmente para o onclick do botão funcionar */
   function goBack() {
     document.getElementById('page-result').style.display = 'none';
     document.getElementById('page-search').style.display = 'block';
-    /* Limpa o campo de busca para nova pesquisa */
     document.getElementById('cryptoInput').value = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  /* showError() — exibe uma mensagem de erro amigável no lugar dos cards */
+  /* Exibe erro como toast (não bloqueia com alert) */
   function showError(coinId, msg) {
     hideLoading();
-    alert('Erro ao buscar "' + coinId + '":\n' + msg + '\n\nVerifique o ID e tente novamente.\nSe receber erro 429, aguarde ~30 segundos (limite da API gratuita).');
+
+    /* Cria ou reutiliza o toast de erro */
+    var toast = document.getElementById('error-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'error-toast';
+      toast.style.cssText = [
+        'position:fixed', 'bottom:24px', 'left:50%', 'transform:translateX(-50%)',
+        'background:#1a0a0a', 'border:1px solid rgba(248,113,113,0.4)',
+        'border-radius:12px', 'padding:14px 20px', 'z-index:9999',
+        'font-family:Outfit,sans-serif', 'font-size:13px', 'color:#f87171',
+        'max-width:420px', 'text-align:center', 'line-height:1.5',
+        'box-shadow:0 8px 32px rgba(0,0,0,0.5)', 'transition:opacity 0.4s'
+      ].join(';');
+      document.body.appendChild(toast);
+    }
+
+    /* Mensagem amigável baseada no tipo de erro */
+    var friendly = msg;
+    if (msg.indexOf('429') !== -1 || msg.indexOf('rate') !== -1) {
+      friendly = '⏳ Limite da API gratuita atingido. Aguarde ~30 segundos e tente novamente.';
+    } else if (msg.indexOf('fetch') !== -1 || msg.indexOf('network') !== -1 || msg.toLowerCase().indexOf('failed') !== -1) {
+      friendly = '🌐 Erro de conexão. Verifique sua internet e tente novamente.';
+    } else if (msg.indexOf('404') !== -1 || msg.indexOf('coin not found') !== -1) {
+      friendly = '🔍 Moeda "' + coinId + '" não encontrada. Verifique o ID no CoinGecko.';
+    } else {
+      friendly = '⚠️ Erro ao buscar "' + coinId + '": ' + msg;
+    }
+
+    toast.textContent = friendly;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function() {
+      toast.style.opacity = '0';
+    }, 5000);
+  }
+
+
+  /* ════════════════════════════════════════════════════════════════
+     FETCH COM TIMEOUT MANUAL (compatível com todos os browsers)
+
+     AbortSignal.timeout() não funciona em Safari < 16.4 e
+     Firefox < 100. Usamos AbortController + setTimeout manual,
+     que funciona em todos os browsers modernos.
+
+     Parâmetros:
+       url      → URL da requisição
+       timeoutMs → tempo máximo em ms antes de abortar
+     Retorna: Promise que resolve com Response ou rejeita com erro
+     ════════════════════════════════════════════════════════════════ */
+  function fetchWithTimeout(url, timeoutMs) {
+    var controller = new AbortController();
+    var timer = setTimeout(function() {
+      controller.abort();
+    }, timeoutMs);
+
+    return fetch(url, { signal: controller.signal }).then(function(response) {
+      clearTimeout(timer);
+      return response;
+    }).catch(function(err) {
+      clearTimeout(timer);
+      /* Transforma AbortError em mensagem legível */
+      if (err.name === 'AbortError') {
+        throw new Error('Tempo limite esgotado (timeout)');
+      }
+      throw err;
+    });
   }
 
 
   /* ════════════════════════════════════════════════════════════════
      BUSCA NA API
-     fetchCoinData() — busca dados de uma moeda em duas APIs
-     simultaneamente (CoinGecko + DeFiLlama) e chama renderResult().
+     fetchCoinData() — busca dados em CoinGecko + DeFiLlama em paralelo.
 
-     URL da CoinGecko:
-       https://api.coingecko.com/api/v3/coins/{id}
-       Parâmetros: market_data=true → preço, volume, supply, etc.
-                   community_data=true → links de redes sociais
+     FLUXO:
+       1. Exibe loading com etapa "CoinGecko" ativa
+       2. Dispara ambas as chamadas em paralelo (Promise.allSettled)
+       3. Marca etapa "DeFiLlama" quando CoinGecko responde
+       4. Monta o objeto de dados e chama renderResult()
+       5. Marca etapa "Montando" e exibe o resultado
 
-     URL da DeFiLlama:
-       https://api.llama.fi/tvl/{id}
-       Retorna: um número (o TVL em USD) ou 404 se não existir
-
-     Para adicionar uma nova fonte de dados, adicione outra chamada
-     no Promise.allSettled() e processe o resultado abaixo.
+     TRATAMENTO DE ERROS:
+       • 429 → mensagem de rate limit com orientação clara
+       • Network error → mensagem de conexão
+       • 404 → moeda não encontrada
+       • DeFiLlama falha → TVL fica null (não bloqueia o resultado)
      ════════════════════════════════════════════════════════════════ */
   function fetchCoinData(coinId) {
-    /* Mostra spinner com o nome da moeda (ou o id se ainda não temos o nome) */
     showLoading(coinId);
 
     var urlCG = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
@@ -1773,110 +1934,107 @@
     var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
 
     /*
-      Promise.allSettled → roda as duas chamadas em PARALELO.
-      Mesmo que DeFiLlama falhe (moeda sem TVL), CoinGecko ainda funciona.
-      Cada resultado tem: { status: 'fulfilled'|'rejected', value|reason }
+      Ambas as chamadas disparam AO MESMO TEMPO (não sequencialmente).
+      Promise.allSettled garante que mesmo que DeFiLlama falhe,
+      o resultado do CoinGecko ainda é processado.
     */
     Promise.allSettled([
-      fetch(urlCG,    { signal: AbortSignal.timeout(15000) }).then(function (r) {
+      fetchWithTimeout(urlCG, 15000).then(function(r) {
+        /* CoinGecko respondeu — avança para etapa DeFiLlama visualmente */
+        loadingStep('cg', 'done');
+        loadingStep('llama', 'active');
+        if (r.status === 429) throw new Error('HTTP 429 — rate limit');
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       }),
-      fetch(urlLlama, { signal: AbortSignal.timeout(8000) }).then(function (r) {
+      fetchWithTimeout(urlLlama, 8000).then(function(r) {
         if (!r.ok) throw new Error('sem TVL');
         return r.json();
       })
-    ]).then(function (results) {
+    ]).then(function(results) {
       var cgResult    = results[0]; /* CoinGecko */
       var llamaResult = results[1]; /* DeFiLlama */
 
-      /* Se CoinGecko falhou, não há nada a mostrar */
+      /* Se CoinGecko falhou, exibe o erro e para */
       if (cgResult.status === 'rejected') {
-        showError(coinId, cgResult.reason.message || 'Falha na API');
+        showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha na API');
         return;
       }
 
       var data = cgResult.value;
 
-      /* Verifica se a resposta é um erro da CoinGecko (ex: moeda não encontrada) */
+      /* Erro retornado dentro do JSON (ex: "coin not found") */
       if (data.error) {
         showError(coinId, data.error);
         return;
       }
 
-      var md = data.market_data || {}; /* market_data — shortcut */
-      var links = data.links || {};    /* links — shortcut */
+      /* Avança para etapa "Montando dashboard" */
+      loadingStep('llama', 'done');
+      loadingStep('render', 'active');
 
-      /*
-        Monta o objeto de contratos a partir de data.platforms.
-        data.platforms = { "ethereum": "0x123...", "polygon-pos": "0xabc...", ... }
-        Filtra entradas vazias e ordena alfabeticamente.
-      */
+      var md    = data.market_data || {};
+      var links = data.links || {};
+
+      /* Contratos: extrai de data.platforms, filtra vazios, ordena */
       var contracts = Object.entries(data.platforms || {})
-        .filter(function (pair) { return pair[1] && pair[1].trim(); })
-        .sort(function (a, b) { return a[0].localeCompare(b[0]); })
-        .map(function (pair) { return { network: pair[0], address: pair[1] }; });
+        .filter(function(p) { return p[1] && p[1].trim(); })
+        .sort(function(a, b) { return a[0].localeCompare(b[0]); })
+        .map(function(p)  { return { network: p[0], address: p[1] }; });
 
-      /*
-        Constrói os links sociais a partir dos dados da CoinGecko.
-        twitter_screen_name → apenas o handle, ex: "solana" → URL completa
-        telegram_channel_identifier → handle do canal, ex: "solana"
-        chat_url → array com URLs de Discord, etc.
-      */
-      var twitterHandle   = links.twitter_screen_name;
-      var telegramHandle  = links.telegram_channel_identifier;
-      var discordUrl      = (links.chat_url || []).find(function (u) { return u && u.includes('discord'); });
-      var githubUrl       = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
+      /* Links sociais */
+      var twitterHandle  = links.twitter_screen_name;
+      var telegramHandle = links.telegram_channel_identifier;
+      var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
+      var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
 
-      /* TVL da DeFiLlama — pode ser null se a moeda não tem protocolo DeFi */
+      /* TVL — null se DeFiLlama não respondeu ou moeda sem TVL */
       var tvlValue = null;
       if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
         tvlValue = llamaResult.value;
       }
 
-      /* Calcula % liberado e % bloqueado (circ / total) */
-      var circ  = md.circulating_supply  || null;
-      var total = md.total_supply        || null;
+      /* Calcula % liberado e % bloqueado */
+      var circ  = md.circulating_supply || null;
+      var total = md.total_supply       || null;
       var pctFree   = (circ && total) ? (circ / total * 100) : null;
-      var pctLocked = pctFree != null ? (100 - pctFree) : null;
+      var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
 
-      /* Objeto final — passado para renderResult() */
+      /* Objeto de dados completo → passado para renderResult() */
       var coinData = {
         name:   data.name,
         symbol: (data.symbol || '').toUpperCase(),
         rank:   data.market_cap_rank || '—',
         image:  data.image ? (data.image.large || data.image.small || '') : '',
 
-        price:           md.current_price ? (md.current_price.usd || 0) : 0,
-        priceChange24h:  md.price_change_percentage_24h || 0,
+        price:          md.current_price ? (md.current_price.usd || 0) : 0,
+        priceChange24h: md.price_change_percentage_24h || 0,
 
-        marketCap: md.market_cap ? (md.market_cap.usd || 0) : 0,
+        marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
         fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
 
-        volume24h:  md.total_volume ? (md.total_volume.usd || 0) : 0,
-        /* volumePct = volume / marketCap × 100 */
+        volume24h: md.total_volume ? (md.total_volume.usd || 0) : 0,
         volumePct: (md.total_volume && md.market_cap && md.market_cap.usd)
                    ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
-        volume7d: null, /* CoinGecko free tier não fornece volume 7D */
+        volume7d: null, /* CoinGecko free tier não fornece */
 
         circulatingSupply: circ,
         totalSupply:       total,
         pctFree:           pctFree,
         pctLocked:         pctLocked,
+        tvl:               tvlValue,
 
-        tvl: tvlValue,
-
-        /* Links */
-        website:  links.homepage ? (links.homepage[0] || null) : null,
-        twitter:  twitterHandle  ? 'https://twitter.com/' + twitterHandle : null,
-        telegram: telegramHandle ? 'https://t.me/' + telegramHandle : null,
-        discord:  discordUrl     || null,
-        github:   githubUrl      || null,
+        website:  links.homepage   ? (links.homepage[0] || null) : null,
+        twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
+        telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
+        discord:  discordUrl       || null,
+        github:   githubUrl        || null,
 
         contracts: contracts
       };
 
-      /* Preenche todos os cards e mostra a página de resultado */
+      /* Renderiza todos os cards e exibe a tela de resultado */
+      loadingStep('render', 'done');
       renderResult(coinData);
       showResult();
     });
