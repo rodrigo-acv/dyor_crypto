@@ -2055,6 +2055,13 @@
         var vols = vol7Result.value.total_volumes;
         /* Soma todos os volumes do período (cada item é [timestamp, volume]) */
         var sum7d = vols.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
+        /*
+          O endpoint days=7 retorna 8 pontos (inclui o dia atual parcial).
+          Limitamos aos últimos 7 para bater com a metodologia do CMC.
+          slice(-7) pega os 7 últimos itens do array.
+        */
+        var last7 = vols.slice(-7);
+        var sum7d = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
         if (sum7d > 0) {
           volume7d = sum7d;
           var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
