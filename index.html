@@ -2130,16 +2130,11 @@
        cgQueue(function() { return fetch(url); })
          .then(function(r) { ... });  ← funciona igual ao fetch normal
   */
-  var _cgQueue       = [];      /* fila de { fn, resolve, reject } */
-  var _cgBusy        = false;   /* true enquanto processa uma chamada */
-  var _cgLastCall    = 0;       /* timestamp da última chamada despachada */
-  var CG_MIN_INTERVAL = 2100;   /* ms mínimos entre chamadas (2.1s) */
+  var _cgQueue        = [];
+  var _cgBusy         = false;
+  var _cgLastCall     = 0;
+  var CG_MIN_INTERVAL = 3000; /* 3s entre chamadas — margem segura para o plano gratuito */
 
-  /*
-    cgQueue(fn) — enfileira uma chamada ao CoinGecko.
-    fn deve ser uma função que retorna uma Promise (ex: fetch).
-    Retorna uma Promise que resolve/rejeita com o resultado de fn.
-  */
   function cgQueue(fn) {
     return new Promise(function(resolve, reject) {
       _cgQueue.push({ fn: fn, resolve: resolve, reject: reject });
@@ -2147,40 +2142,34 @@
     });
   }
 
-  /* Processador interno da fila — despacha uma entrada por vez */
   function cgProcess() {
     if (_cgBusy || _cgQueue.length === 0) return;
 
-    var now      = Date.now();
-    var elapsed  = now - _cgLastCall;
-    var wait     = Math.max(0, CG_MIN_INTERVAL - elapsed);
-
-    _cgBusy = true;
+    var wait = Math.max(0, CG_MIN_INTERVAL - (Date.now() - _cgLastCall));
+    _cgBusy  = true;
 
     setTimeout(function() {
-      var entry = _cgQueue.shift(); /* pega o próximo da fila */
-      if (!entry) { _cgBusy = false; return; }
+      var entry = _cgQueue.shift();
+      if (!entry) { _cgBusy = false; cgProcess(); return; }
 
       _cgLastCall = Date.now();
 
       entry.fn()
         .then(function(result) {
           entry.resolve(result);
+          /* libera a fila APÓS resolver — sem .finally() para compatibilidade */
+          _cgBusy = false;
+          cgProcess();
         })
         .catch(function(err) {
           entry.reject(err);
-        })
-        .finally(function() {
+          /* libera a fila mesmo em caso de erro */
           _cgBusy = false;
-          cgProcess(); /* processa o próximo item da fila */
+          cgProcess();
         });
     }, wait);
   }
 
-  /*
-    cgFetch(url, timeoutMs) — wrapper de fetchWithTimeout que passa
-    pela fila. Use no lugar de fetchWithTimeout para URLs do CoinGecko.
-  */
   function cgFetch(url, timeoutMs) {
     return cgQueue(function() {
       return fetchWithTimeout(url, timeoutMs || 15000);
