@@ -2103,78 +2103,8 @@
   }
 
 
-  /* ════════════════════════════════════════════════════════════════
-     FILA DE CHAMADAS AO COINGECKO
-     ════════════════════════════════════════════════════════════════
 
-     POR QUE UMA FILA?
-     ─────────────────
-     O plano gratuito do CoinGecko permite ~30 calls/min, ou seja,
-     1 chamada a cada 2 segundos. Cada pesquisa faz 2 chamadas:
-       1ª → dados gerais (/coins/{id})
-       2ª → volume 7D   (/coins/{id}/market_chart)
 
-     Com 3 pesquisas rápidas = 6 chamadas em poucos segundos → 429.
-
-     A fila garante que NENHUMA chamada ao CoinGecko sai com menos
-     de 2.1s de intervalo da anterior, independentemente de quantas
-     pesquisas o usuário fizer. As chamadas simplesmente aguardam
-     sua vez na fila sem mostrar erro.
-
-     FUNCIONAMENTO:
-       cgQueue(fn) → enfileira uma função que retorna uma Promise
-       O processador interno despacha uma a cada 2.1s
-       Retorna uma Promise que resolve quando a chamada terminar
-
-     EXEMPLO:
-       cgQueue(function() { return fetch(url); })
-         .then(function(r) { ... });  ← funciona igual ao fetch normal
-  */
-  var _cgQueue        = [];
-  var _cgBusy         = false;
-  var _cgLastCall     = 0;
-  var CG_MIN_INTERVAL = 3000; /* 3s entre chamadas — margem segura para o plano gratuito */
-
-  function cgQueue(fn) {
-    return new Promise(function(resolve, reject) {
-      _cgQueue.push({ fn: fn, resolve: resolve, reject: reject });
-      cgProcess();
-    });
-  }
-
-  function cgProcess() {
-    if (_cgBusy || _cgQueue.length === 0) return;
-
-    var wait = Math.max(0, CG_MIN_INTERVAL - (Date.now() - _cgLastCall));
-    _cgBusy  = true;
-
-    setTimeout(function() {
-      var entry = _cgQueue.shift();
-      if (!entry) { _cgBusy = false; cgProcess(); return; }
-
-      _cgLastCall = Date.now();
-
-      entry.fn()
-        .then(function(result) {
-          entry.resolve(result);
-          /* libera a fila APÓS resolver — sem .finally() para compatibilidade */
-          _cgBusy = false;
-          cgProcess();
-        })
-        .catch(function(err) {
-          entry.reject(err);
-          /* libera a fila mesmo em caso de erro */
-          _cgBusy = false;
-          cgProcess();
-        });
-    }, wait);
-  }
-
-  function cgFetch(url, timeoutMs) {
-    return cgQueue(function() {
-      return fetchWithTimeout(url, timeoutMs || 15000);
-    });
-  }
 
   /* ════════════════════════════════════════════════════════════════
      CACHE DE PESQUISAS
@@ -2221,13 +2151,58 @@
       Se os dados estiverem frescos (< 3 min), renderiza imediatamente.
       Modo silent nunca usa cache (sempre busca dados novos do servidor).
     */
+  /* ════════════════════════════════════════════════════════════════
+     CONTROLE DE RATE LIMIT — solução simples e robusta
+
+     Estratégia:
+     • urlCG (dados principais) → dispara IMEDIATAMENTE sempre
+     • urlVol7 (market_chart)   → dispara com 3.5s de delay
+     • Se o usuário pesquisar de novo, o vol7 pendente é CANCELADO
+       e um novo é agendado para a nova moeda
+
+     Isso garante que a pesquisa principal nunca espera e o vol7
+     nunca conflita com a chamada principal.
+  */
+  var _vol7Timer = null; /* setTimeout pendente do vol7 atual */
+
+  /* Cancela o vol7 pendente (se houver) */
+  function cancelPendingVol7() {
+    if (_vol7Timer) {
+      clearTimeout(_vol7Timer);
+      _vol7Timer = null;
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     CACHE DE PESQUISAS
+     ════════════════════════════════════════════════════════════════ */
+  var _cache    = {};
+  var CACHE_TTL = 3 * 60 * 1000; /* 3 minutos */
+
+  function cacheGet(coinId) {
+    var entry = _cache[coinId];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > CACHE_TTL) { delete _cache[coinId]; return null; }
+    return entry.data;
+  }
+  function cacheSet(coinId, data) { _cache[coinId] = { data: data, ts: Date.now() }; }
+  function cacheInvalidate(coinId) { delete _cache[coinId]; }
+
+  /* ════════════════════════════════════════════════════════════════
+     BUSCA NA API
+  ════════════════════════════════════════════════════════════════ */
+  function fetchCoinData(coinId, silent) {
+    _currentCoinId = coinId;
+
+    /* Cancela vol7 de pesquisa anterior para não conflitar */
+    cancelPendingVol7();
+
+    /* Cache hit → resultado instantâneo */
     if (!silent) {
       var cached = cacheGet(coinId);
       if (cached) {
-        /* Cache hit — resultado instantâneo! */
         renderResult(cached);
         showResult();
-        /* Reinicia o countdown do refresh para sincronizar com os dados */
         startRefreshTimer();
         return;
       }
@@ -2237,16 +2212,19 @@
     var urlCG    = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
                  + '?localization=false&tickers=false&market_data=true'
                  + '&community_data=true&developer_data=false&sparkline=false';
-    var urlLlama = 'https://api.llama.fi/tvl/'    + encodeURIComponent(coinId);
+    var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
     var urlVol7  = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
                  + '/market_chart?vs_currency=usd&days=7&interval=daily';
 
-    /* ── ETAPA 1: CoinGecko principal + DeFiLlama em paralelo ──────
-       Ambas passam pela fila cgFetch — o espaçamento mínimo de 2.1s
-       é garantido automaticamente pela fila, sem setTimeout manual.
-       DeFiLlama é domínio diferente e não passa pela fila CG.        */
+    /*
+      ETAPA 1: CoinGecko principal + DeFiLlama em paralelo (disparo imediato).
+      ETAPA 2: vol7D agendado para 3.5s depois (via _vol7Timer).
+
+      Se o usuário pesquisar outra moeda antes do vol7 disparar,
+      cancelPendingVol7() cancela o timer e agenda um novo para a nova moeda.
+    */
     Promise.allSettled([
-      cgFetch(urlCG, 15000).then(function(r) {
+      fetchWithTimeout(urlCG, 15000).then(function(r) {
         if (!silent) { loadingStep('cg', 'done'); loadingStep('llama', 'active'); }
         if (r.status === 429) throw new Error('429');
         if (r.status === 404) throw new Error('404');
@@ -2261,7 +2239,6 @@
       var cgResult    = results[0];
       var llamaResult = results[1];
 
-      /* CoinGecko falhou — para tudo */
       if (cgResult.status === 'rejected') {
         showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha na API');
         return;
@@ -2301,7 +2278,6 @@
       var pctFree   = (circ && total) ? (circ / total * 100) : null;
       var pctLocked = pctFree != null  ? (100 - pctFree)     : null;
 
-      /* Objeto de dados (vol7 = null por enquanto, chega depois) */
       var coinData = {
         name:   cgData.name,
         symbol: (cgData.symbol || '').toUpperCase(),
@@ -2314,8 +2290,8 @@
         volume24h:   md.total_volume ? (md.total_volume.usd || 0) : 0,
         volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd)
                      ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
-        volume7d:    null,   /* atualizado após 2s */
-        volume7dPct: null,   /* atualizado após 2s */
+        volume7d:    null,
+        volume7dPct: null,
         circulatingSupply: circ,
         totalSupply:       total,
         pctFree:           pctFree,
@@ -2329,60 +2305,60 @@
         contracts: contracts
       };
 
-      /* ── Exibe o resultado IMEDIATAMENTE com os dados disponíveis ──
-         O vol7D fica com "..." e é preenchido após 2s.               */
       if (!silent) loadingStep('render', 'done');
-
-      /* Salva no cache ANTES de renderizar — próxima pesquisa desta
-         moeda será instantânea enquanto os dados forem frescos (3 min) */
       cacheSet(coinId, coinData);
-
       renderResult(coinData);
       if (!silent) showResult();
 
-      /* Mostra "..." no vol7D enquanto aguarda a segunda chamada */
+      /* Mostra "..." no vol7D enquanto aguarda */
       var v7pct = document.getElementById('s-vol7-pct');
       var v7val = document.getElementById('s-vol7');
       if (v7pct) { v7pct.textContent = '...'; v7pct.style.color = '#3a3a60'; }
       if (v7val) { v7val.textContent = ''; }
 
-      /* ── ETAPA 2: market_chart 7D via fila ────────────────────────
-         cgFetch enfileira a chamada e aguarda o intervalo mínimo de
-         2.1s automaticamente — sem setTimeout manual necessário.     */
-      cgFetch(urlVol7, 10000)
+      /*
+        Agenda o vol7D para 3.5s depois.
+        Guardamos o timer em _vol7Timer para poder cancelar se o usuário
+        pesquisar outra moeda antes deste disparar.
+      */
+      _vol7Timer = setTimeout(function() {
+        _vol7Timer = null;
+        fetchWithTimeout(urlVol7, 10000)
           .then(function(r) {
             if (r.status === 429) throw new Error('429');
             if (!r.ok) throw new Error('sem vol7');
             return r.json();
           })
           .then(function(chartData) {
-            if (!chartData || !chartData.total_volumes) { throw new Error('sem dados'); }
-            var last7 = chartData.total_volumes.slice(-7);
-            var sum7d = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
+            if (!chartData || !chartData.total_volumes) throw new Error('sem dados');
+            var last7  = chartData.total_volumes.slice(-7);
+            var sum7d  = last7.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
             if (sum7d <= 0) throw new Error('volume zero');
-
             var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
             var pct7d   = (mcapUsd > 0) ? (sum7d / mcapUsd * 100) : null;
 
-            /* Atualiza o DOM diretamente (sem re-renderizar tudo) */
+            /* Só atualiza o DOM se ainda estiver mostrando a mesma moeda */
+            if (_currentCoinId !== coinId) return;
+
             if (v7pct) {
               v7pct.textContent = pct7d ? pct7d.toFixed(2) + '% do MCap' : '—';
-              if (pct7d >= 15)     v7pct.style.color = '#34d399'; /* verde  */
-              else if (pct7d >= 5) v7pct.style.color = '#fbbf24'; /* âmbar  */
-              else                 v7pct.style.color = '#f87171'; /* vermelho */
+              if (pct7d >= 15)     v7pct.style.color = '#34d399';
+              else if (pct7d >= 5) v7pct.style.color = '#fbbf24';
+              else                 v7pct.style.color = '#f87171';
             }
             if (v7val) v7val.textContent = fmtUSD(sum7d);
 
-            /* Atualiza o cache com o vol7D agora completo */
+            /* Atualiza cache com vol7D completo */
             coinData.volume7d    = sum7d;
             coinData.volume7dPct = pct7d;
             cacheSet(coinId, coinData);
           })
           .catch(function() {
-            /* Se falhar (429, timeout, etc.) mostra "—" sem quebrar o resto */
+            if (_currentCoinId !== coinId) return;
             if (v7pct) { v7pct.textContent = '—'; v7pct.style.color = ''; }
             if (v7val) { v7val.textContent = ''; }
           });
+      }, 3500); /* 3.5s após a chamada principal — respeita o rate limit */
 
     }); /* fim do allSettled */
   }
