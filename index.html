@@ -1063,7 +1063,7 @@
             <div class="stat-sub" id="s-supply-pct">—</div>
           </div>
           <div class="stat-box" data-card="total" data-tip="Total de moedas já criadas ou programadas para existir. Inclui circulantes + bloqueadas. Exceto as queimadas.">
-            <div class="stat-lbl">Total Supply</div>
+            <div class="stat-lbl" id="lbl-total">Total Supply</div>
             <div class="stat-val" id="s-total">—</div>
           </div>
           <div class="stat-box" data-card="vol7" data-tip="Volume total das últimas 7 dias dividido pelo Market Cap. Verde ≥15% · Âmbar ≥5% · Vermelho <5%">
@@ -1073,11 +1073,11 @@
           </div>
 
           <div class="stat-box" data-card="lib" data-tip="Circ. Supply ÷ Total Supply × 100. Quanto do supply total já está disponível no mercado.">
-            <div class="stat-lbl">% Liberado</div>
+            <div class="stat-lbl" id="lbl-lib">% Liberado</div>
             <div class="stat-val green" id="s-lib">—</div>
           </div>
           <div class="stat-box" data-card="locked" data-tip="100% − % Liberado. Supply ainda bloqueado: em vesting, reservas da equipe ou ainda não emitido.">
-            <div class="stat-lbl">% Bloqueado</div>
+            <div class="stat-lbl" id="lbl-locked">% Bloqueado</div>
             <div class="stat-val amber" id="s-locked">—</div>
           </div>
 
@@ -1436,6 +1436,32 @@
     if (n >= 1e3)  return 'US$ ' + (n/1e3).toFixed(2)  + ' K';
     return 'US$ ' + n.toFixed(4);
   }
+
+  /*
+    fmtPrice() — formato especial para o card de Preço.
+    Mostra o valor COMPLETO em pt-BR (ponto milhar, vírgula decimal)
+    + sufixo indicativo K/M/B/T ao lado.
+    Ex: 2048.33  → "US$ 2.048,33 K"
+        95000    → "US$ 95.000,00 K"
+        0.00045  → "US$ 0,00045"
+        1500000  → "US$ 1.500.000,00 M" (raro mas consistente)
+  */
+  function fmtPrice(n) {
+    if (n == null || n === 0) return '—';
+    var suffix = '';
+    if      (n >= 1e12) suffix = ' T';
+    else if (n >= 1e9)  suffix = ' B';
+    else if (n >= 1e6)  suffix = ' M';
+    else if (n >= 1e3)  suffix = ' K';
+    /* Casas decimais: 2 para valores >= $1, mais para microcaps */
+    var decimals = n >= 1 ? 2 : n >= 0.01 ? 4 : 6;
+    /* Formata o valor COMPLETO em pt-BR (sem dividir) */
+    var formatted = n.toLocaleString('pt-BR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+    return 'US$ ' + formatted + suffix;
+  }
   function fmtNum(n) {
     if (!n) return '—';
     if (n >= 1e9) return (n/1e9).toFixed(2) + ' B';
@@ -1619,7 +1645,7 @@
     buildLinks(d);
 
     var chg = d.priceChange24h || 0;
-    setText('s-price', fmtUSD(d.price));
+    /* s-price é atualizado abaixo junto com os outros cards de supply */
     var chgEl = document.getElementById('s-chg');
     chgEl.textContent = (chg >= 0 ? '+' : '')+chg.toFixed(2)+'% (24h)';
     chgEl.style.color = chg >= 0 ? '#34d399' : '#f87171';
@@ -1648,9 +1674,36 @@
       if (v7val) { v7val.textContent = ''; }
     }
 
+    /* ── Feature 3: Preço com formato pt-BR + sufixo ─────────────── */
+    setText('s-price', fmtPrice(d.price));
+
     setText('s-supply', fmtNum(d.circulatingSupply));
     document.getElementById('s-supply-pct').textContent = d.pctFree ? d.pctFree.toFixed(1)+'% do total' : '—';
-    setText('s-total',  fmtNum(d.totalSupply));
+
+    /* ── Feature 1: Total Supply → Max Supply se existir ─────────── */
+    var lblTotal = document.getElementById('lbl-total');
+    if (d.maxSupply) {
+      /* Bitcoin e similares: exibe Max Supply com label correto */
+      if (lblTotal) lblTotal.textContent = 'Max Supply';
+      setText('s-total', fmtNum(d.maxSupply));
+    } else {
+      /* Ethereum, Solana, tokens: exibe Total Supply normalmente */
+      if (lblTotal) lblTotal.textContent = 'Total Supply';
+      setText('s-total', fmtNum(d.totalSupply));
+    }
+
+    /* ── Feature 2: Labels % dependem da presença de max_supply ──── */
+    var lblLib    = document.getElementById('lbl-lib');
+    var lblLocked = document.getElementById('lbl-locked');
+    if (d.maxSupply) {
+      /* Tem teto de emissão (PoW ou token com max fixo) */
+      if (lblLib)    lblLib.textContent    = '% Minerado';
+      if (lblLocked) lblLocked.textContent = '% Falta Minerar';
+    } else {
+      /* Sem teto (PoS ou inflacionário) */
+      if (lblLib)    lblLib.textContent    = '% Liberado';
+      if (lblLocked) lblLocked.textContent = '% Bloqueado';
+    }
     setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)+'%'   : '—');
     setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2)+'%' : '—');
     setText('s-vol7',   d.volume7d  ? fmtUSD(d.volume7d) : '—');
@@ -1686,9 +1739,11 @@
       if (el) el.setAttribute('data-tip', text);
     }
 
-    var p   = fmtUSD(d.price);
+    var p   = fmtPrice(d.price); /* usa fmtPrice no tooltip também */
     var cs  = fmtNum(d.circulatingSupply);
     var ts  = fmtNum(d.totalSupply);
+    var ms  = d.maxSupply ? fmtNum(d.maxSupply) : null;
+    var den = ms || ts;  /* denominador real usado nos % */
     var mc  = fmtUSD(d.marketCap);
     var v24 = fmtUSD(d.volume24h);
 
@@ -1707,14 +1762,21 @@
     setTip('supply',
       'Moedas em circulação: ' + cs + '.\nNão inclui bloqueadas, queimadas ou não emitidas.');
 
-    setTip('total',
-      'Total Supply: ' + ts + '.\nCirculantes + bloqueadas (exceto queimadas).');
+    /* Total card — muda conforme max_supply */
+    if (ms) {
+      setTip('total', 'Máximo de moedas que podem existir: ' + ms + '.\nCodificado no protocolo — nunca pode ser ultrapassado.');
+    } else {
+      setTip('total', 'Total Supply: ' + ts + '.\nCirculantes + bloqueadas (exceto queimadas).');
+    }
 
-    setTip('lib',
-      'Circ. Supply (' + cs + ') ÷ Total Supply (' + ts + ') × 100.');
-
-    setTip('locked',
-      '100% − % Liberado.\nSupply ainda em vesting, reservas ou não emitido.');
+    /* % Liberado/Minerado */
+    if (ms) {
+      setTip('lib',    'Circ. Supply (' + cs + ') ÷ Max Supply (' + ms + ') × 100.');
+      setTip('locked', '100% − % Minerado (' + (d.pctFree ? d.pctFree.toFixed(2) : '—') + '%).\nBitcoins ainda a ser minerados até o teto de ' + ms + '.');
+    } else {
+      setTip('lib',    'Circ. Supply (' + cs + ') ÷ Total Supply (' + ts + ') × 100.');
+      setTip('locked', '100% − % Liberado (' + (d.pctFree ? d.pctFree.toFixed(2) : '—') + '%).\nSupply ainda em vesting, reservas ou não emitido.');
+    }
 
     if (d.tvl && d.tvl > 0) {
       setTip('tvl',
@@ -1873,8 +1935,12 @@
     var urlLlamaProtocol = 'https://api.llama.fi/tvl/'+encodeURIComponent(coinId);
     var urlLlamaChains   = 'https://api.llama.fi/v2/chains';
 
+    /*
+      fetchTvlSmart() — estratégia sequencial comprovada.
+      1º tenta como protocolo DeFi (/tvl/{slug})
+      2º se falhar, busca como blockchain (/v2/chains por gecko_id)
+    */
     function fetchTvlSmart(geckoId) {
-      /* Tenta protocolo primeiro */
       return fetchWithTimeout(urlLlamaProtocol, 6000)
         .then(function(r) {
           if (!r.ok) throw new Error('not a protocol');
@@ -1885,12 +1951,10 @@
           throw new Error('zero or invalid');
         })
         .catch(function() {
-          /* Fallback: busca no endpoint de chains pelo gecko_id */
           return fetchWithTimeout(urlLlamaChains, 8000)
             .then(function(r) { return r.json(); })
             .then(function(chains) {
               if (!Array.isArray(chains)) return null;
-              /* Procura a chain cujo gecko_id bate com o coinId da CoinGecko */
               var match = chains.find(function(c) {
                 return c.gecko_id && c.gecko_id.toLowerCase() === geckoId.toLowerCase();
               });
@@ -1930,8 +1994,17 @@
 
       var circ      = md.circulating_supply || null;
       var total     = md.total_supply       || null;
-      var pctFree   = (circ && total) ? (circ/total*100) : null;
-      var pctLocked = pctFree != null  ? (100-pctFree)   : null;
+      var maxSup    = md.max_supply         || null; /* ex: 21M do Bitcoin */
+
+      /*
+        Denominador para % de supply:
+        SE max_supply existe → usa ele (ex: Bitcoin 21M)
+        SE não              → usa total_supply (ETH, SOL, tokens...)
+        Isso garante que Bitcoin mostre 93.8% e não 100%.
+      */
+      var denominator = maxSup || total;
+      var pctFree     = (circ && denominator) ? (circ / denominator * 100) : null;
+      var pctLocked   = pctFree != null ? (100 - pctFree) : null;
 
       var contracts = Object.entries(cgData.platforms || {})
         .filter(function(p){ return p[1] && p[1].trim(); })
@@ -1956,7 +2029,12 @@
         volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd) ? (md.total_volume.usd/md.market_cap.usd*100) : null,
         volume7d:    null,
         volume7dPct: null,
-        circulatingSupply: circ, totalSupply: total, pctFree: pctFree, pctLocked: pctLocked,
+        circulatingSupply: circ,
+        totalSupply:       total,
+        maxSupply:         maxSup,      /* novo campo */
+        denominator:       denominator, /* max_supply || total_supply */
+        pctFree:           pctFree,
+        pctLocked:         pctLocked,
         tvl: tvlValue,
         website:  links.homepage   ? (links.homepage[0]  || null) : null,
         twitter:  twitterHandle    ? 'https://twitter.com/'+twitterHandle  : null,
