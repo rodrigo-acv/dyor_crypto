@@ -2044,14 +2044,19 @@
     }
 
     /* Mensagem amigável baseada no tipo de erro */
-    var friendly = msg;
-    if (msg.indexOf('429') !== -1 || msg.indexOf('rate') !== -1) {
-      friendly = '⏳ Limite da API gratuita atingido. Aguarde ~30 segundos e tente novamente.';
-    } else if (msg.indexOf('fetch') !== -1 || msg.indexOf('network') !== -1 || msg.toLowerCase().indexOf('failed') !== -1) {
-      friendly = '🌐 Erro de conexão. Verifique sua internet e tente novamente.';
-    } else if (msg.indexOf('404') !== -1 || msg.indexOf('coin not found') !== -1) {
-      friendly = '🔍 Moeda "' + coinId + '" não encontrada. Verifique o ID no CoinGecko.';
+    var friendly;
+    if (!msg || msg === '') {
+      friendly = '⚠️ Erro desconhecido. Tente novamente.';
+    } else if (msg === '429' || msg.indexOf('429') !== -1 || msg.indexOf('rate') !== -1) {
+      friendly = '⏳ Limite da API atingido. Aguarde ~30 segundos e tente novamente.';
+    } else if (msg === '404' || msg.indexOf('coin not found') !== -1 || msg.indexOf('not found') !== -1) {
+      friendly = '🔍 "' + coinId + '" não encontrada. Verifique o ID no CoinGecko.';
+    } else if (msg.indexOf('timeout') !== -1 || msg.indexOf('Tempo limite') !== -1) {
+      friendly = '⏱️ A API demorou demais para responder. Tente novamente.';
+    } else if (msg.indexOf('fetch') !== -1 || msg.indexOf('Failed') !== -1 || msg.indexOf('network') !== -1) {
+      friendly = '🌐 Erro de conexão com a API. Verifique sua internet e tente novamente.';
     } else {
+      /* Mostra o código real para facilitar diagnóstico */
       friendly = '⚠️ Erro ao buscar "' + coinId + '": ' + msg;
     }
 
@@ -2148,16 +2153,27 @@
     fetchWithTimeout(urlCG, 15000)
       .then(function(r) {
         if (!silent) { loadingStep('cg', 'done'); loadingStep('llama', 'active'); }
-        if (r.status === 429) throw new Error('HTTP 429 — rate limit');
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (r.status === 429) throw new Error('429');
+        if (r.status === 404) throw new Error('404');
+        if (!r.ok) throw new Error('HTTP_' + r.status);
         return r.json();
       })
       .then(function(cgData) {
 
-        if (cgData.error) { showError(coinId, cgData.error); return; }
+        if (!cgData || cgData.error) {
+          showError(coinId, cgData && cgData.error ? cgData.error : '404');
+          return;
+        }
 
         var md    = cgData.market_data || {};
         var links = cgData.links       || {};
+
+        /*
+          Delay de 600ms antes da segunda chamada ao CoinGecko (market_chart).
+          Sem ele, as duas requisições chegam ao servidor muito próximas
+          e a segunda recebe 429 (rate limit), fazendo o vol7D ficar "—".
+        */
+        setTimeout(function() {
 
         /* ── ETAPA 2: market_chart 7D + DeFiLlama em paralelo ────── */
         Promise.allSettled([
@@ -2193,11 +2209,7 @@
             tvlValue = llamaResult.value;
           }
 
-          /*
-            Volume 7D — soma dos volumes diários dos últimos 7 dias.
-            slice(-7) descarta o ponto parcial do dia atual
-            (o endpoint days=7 retorna 8 pontos incluindo hoje incompleto).
-          */
+          /* Volume 7D */
           var volume7d = null, volume7dPct = null;
           if (vol7Result.status === 'fulfilled' && vol7Result.value && vol7Result.value.total_volumes) {
             var last7 = vol7Result.value.total_volumes.slice(-7);
@@ -2221,25 +2233,20 @@
             symbol: (cgData.symbol || '').toUpperCase(),
             rank:   cgData.market_cap_rank || '—',
             image:  cgData.image ? (cgData.image.large || cgData.image.small || '') : '',
-
             price:          md.current_price ? (md.current_price.usd || 0) : 0,
             priceChange24h: md.price_change_percentage_24h || 0,
-
             marketCap: md.market_cap              ? (md.market_cap.usd              || 0)    : 0,
             fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
-
             volume24h:   md.total_volume ? (md.total_volume.usd || 0) : 0,
             volumePct:   (md.total_volume && md.market_cap && md.market_cap.usd)
                          ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
             volume7d:    volume7d,
             volume7dPct: volume7dPct,
-
             circulatingSupply: circ,
             totalSupply:       total,
             pctFree:           pctFree,
             pctLocked:         pctLocked,
             tvl:               tvlValue,
-
             website:  links.homepage   ? (links.homepage[0] || null) : null,
             twitter:  twitterHandle    ? 'https://twitter.com/' + twitterHandle  : null,
             telegram: telegramHandle   ? 'https://t.me/'        + telegramHandle : null,
@@ -2250,14 +2257,20 @@
 
           if (!silent) loadingStep('render', 'done');
           renderResult(coinData);
-          /* Na primeira busca, showResult troca de tela.
-             No auto-refresh (silent), apenas atualiza os dados. */
           if (!silent) showResult();
+
+        }).catch(function(err2) {
+          /* Erro na ETAPA 2 (vol7 ou llama) — não deveria acontecer
+             pois usamos allSettled, mas por segurança tratamos aqui */
+          showError(coinId, err2 ? (err2.message || 'Erro inesperado') : 'Erro inesperado');
         });
+
+        }, 600); /* ← fim do delay de 600ms antes da ETAPA 2 */
       })
       .catch(function(err) {
-        /* Erro na chamada principal do CoinGecko */
-        showError(coinId, err ? err.message : 'Falha na API');
+        /* Erro na ETAPA 1 (CoinGecko principal) */
+        var msg = err ? (err.message || '') : '';
+        showError(coinId, msg || 'Falha na API');
       });
   }
 
