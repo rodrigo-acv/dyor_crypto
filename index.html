@@ -962,7 +962,7 @@
               O JS preenche s-vol-pct com o % e s-vol com o USD.
             -->
             <div class="stat-lbl">Volume 24h</div>
-            <div class="stat-val green" id="s-vol-pct">—</div>  <!-- % em destaque -->
+            <div class="stat-val" id="s-vol-pct">—</div>  <!-- % em destaque (cor dinâmica via JS) -->
             <div class="stat-sub"      id="s-vol">—</div>       <!-- USD discreto  -->
           </div>
           <div class="stat-box">
@@ -982,7 +982,7 @@
               • Valor USD total → pequeno, muted (contexto)
             -->
             <div class="stat-lbl">Volume 7D</div>
-            <div class="stat-val green" id="s-vol7-pct">—</div>  <!-- % em destaque -->
+            <div class="stat-val" id="s-vol7-pct">—</div>  <!-- % em destaque (cor dinâmica via JS) -->
             <div class="stat-sub"      id="s-vol7">—</div>       <!-- USD discreto  -->
           </div>
 
@@ -1784,24 +1784,49 @@
     setText('s-fdv',       fmtUSD(d.fdv));
 
     /*
-      Volume 24h — hierarquia invertida:
-      • s-vol-pct → % do MCap (DESTAQUE, grande, verde)
+      Volume 24h — hierarquia invertida + cor por faixa:
+      • s-vol-pct → % do MCap (DESTAQUE, cor dinâmica)
       • s-vol     → valor USD  (discreto, pequeno)
+
+      REGRA DE COR (24h):
+        ≥ 3%          → verde  (#34d399) — volume saudável
+        ≥ 1% e < 3%   → âmbar  (#fbbf24) — volume baixo, atenção
+        < 1%          → vermelho (#f87171) — liquidez preocupante
     */
     var volPctEl = document.getElementById('s-vol-pct');
-    volPctEl.textContent = d.volumePct ? d.volumePct.toFixed(2) + '% do MCap' : '—';
+    if (d.volumePct != null) {
+      volPctEl.textContent = d.volumePct.toFixed(2) + '% do MCap';
+      if      (d.volumePct >= 3) volPctEl.style.color = '#34d399'; /* verde   */
+      else if (d.volumePct >= 1) volPctEl.style.color = '#fbbf24'; /* âmbar   */
+      else                       volPctEl.style.color = '#f87171'; /* vermelho */
+    } else {
+      volPctEl.textContent = '—';
+      volPctEl.style.color = '';
+    }
     setText('s-vol', fmtUSD(d.volume24h));
 
     /*
       Volume 7D — mesmo padrão:
-      • s-vol7-pct → % do MCap (DESTAQUE)
+      • s-vol7-pct → % do MCap (DESTAQUE, cor dinâmica)
       • s-vol7     → valor USD total dos 7 dias (discreto)
+
+      REGRA DE COR (7D):
+        ≥ 15%          → verde  (#34d399) — volume saudável
+        ≥ 5% e < 15%   → âmbar  (#fbbf24) — volume baixo, atenção
+        < 5%           → vermelho (#f87171) — liquidez preocupante
+
+      Referência: ~3%/dia × 7 dias = ~21% saudável.
+      15% é o limiar mínimo aceitável para uma semana.
     */
     var vol7PctEl = document.getElementById('s-vol7-pct');
     if (d.volume7dPct != null) {
       vol7PctEl.textContent = d.volume7dPct.toFixed(2) + '% do MCap';
+      if      (d.volume7dPct >= 15) vol7PctEl.style.color = '#34d399'; /* verde   */
+      else if (d.volume7dPct >=  5) vol7PctEl.style.color = '#fbbf24'; /* âmbar   */
+      else                          vol7PctEl.style.color = '#f87171'; /* vermelho */
     } else {
       vol7PctEl.textContent = '—';
+      vol7PctEl.style.color = '';
     }
     setText('s-vol7', d.volume7d ? fmtUSD(d.volume7d) : '—');
 
