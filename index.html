@@ -584,6 +584,83 @@
     .stat-sub { font-size: 10px; color: var(--res-text-muted); margin-top: 3px; }
 
     /* ══════════════════════════════════════════════════════════════
+       TOOLTIPS DE ESTATÍSTICAS — híbrido desktop + mobile
+
+       COMO FUNCIONA:
+       • Cada .stat-box recebe position:relative e data-tip="..."
+       • Desktop  → ::after pseudo-elemento aparece no :hover
+       • Mobile   → JS adiciona .tip-open no tap; fecha ao tocar fora
+       • O pseudo-elemento lê o conteúdo de data-tip via attr()
+       • max-width + white-space:normal para quebrar linhas longas
+       ══════════════════════════════════════════════════════════════ */
+
+    /* O card precisa de position:relative para o tooltip se ancorar */
+    .stat-box { position: relative; }
+
+    /* Tooltip — pseudo-elemento ::after no card */
+    .stat-box[data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 8px); /* aparece ACIMA do card */
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a3a;
+      border: 1px solid rgba(108,92,231,0.4);
+      border-radius: 10px;
+      padding: 9px 13px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      color: #b0b0d8;
+      line-height: 1.55;
+      white-space: normal;
+      width: max-content;
+      max-width: 220px;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      z-index: 999;
+      pointer-events: none;
+      /* Oculto por padrão */
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.18s ease, visibility 0.18s ease;
+    }
+
+    /* Setinha apontando para baixo (em direção ao card) */
+    .stat-box[data-tip]::before {
+      content: '';
+      position: absolute;
+      bottom: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: rgba(108,92,231,0.4);
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.18s ease, visibility 0.18s ease;
+      pointer-events: none;
+    }
+
+    /* Desktop: mostra no hover */
+    @media (hover: hover) {
+      .stat-box[data-tip]:hover::after,
+      .stat-box[data-tip]:hover::before { opacity: 1; visibility: visible; }
+    }
+
+    /* Mobile: mostra quando JS adiciona .tip-open */
+    .stat-box.tip-open::after,
+    .stat-box.tip-open::before { opacity: 1; visibility: visible; }
+
+    /* Tooltip na borda esquerda da grid — abre para a direita */
+    .stat-box.tip-right::after { left: 0; transform: none; }
+    .stat-box.tip-right::before { left: 18px; transform: none; }
+
+    /* Tooltip na borda direita da grid — abre para a esquerda */
+    .stat-box.tip-left::after { left: auto; right: 0; transform: none; }
+    .stat-box.tip-left::before { left: auto; right: 18px; transform: none; }
+
+    /* ══════════════════════════════════════════════════════════════
        CARD: GAUGE — Velocímetro semicircular de Market Cap
 
        COMO FUNCIONA:
@@ -986,64 +1063,52 @@
         <div class="card-label">📊 Estatísticas</div>
         <div class="stats-grid">
 
-          <div class="stat-box">
+          <div class="stat-box" data-tip="Preço atual de mercado. Atualizado a cada pesquisa via CoinGecko.">
             <div class="stat-lbl">Preço</div>
             <div class="stat-val" id="s-price">—</div>
             <div class="stat-sub" id="s-chg">—</div>  <!-- variação 24h -->
           </div>
-          <div class="stat-box">
+          <div class="stat-box" data-tip="Preço × Circulating Supply. Representa o valor total das moedas em circulação hoje.">
             <div class="stat-lbl">Market Cap</div>
             <div class="stat-val violet" id="s-mcap">—</div>
             <div class="stat-sub" id="s-mcap-rank">—</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box tip-left" data-tip="Fully Diluted Valuation: Preço × Total Supply. Estimativa do valor se TODAS as moedas fossem emitidas hoje.">
             <div class="stat-lbl">FDV</div>
             <div class="stat-val" id="s-fdv">—</div>
           </div>
 
-          <div class="stat-box">
-            <!--
-              Volume 24h — HIERARQUIA INVERTIDA vs versão anterior:
-              • % do MCap → grande, verde (destaque — o que importa)
-              • Valor USD  → pequeno, muted (contexto)
-              O JS preenche s-vol-pct com o % e s-vol com o USD.
-            -->
+          <div class="stat-box tip-right" data-tip="Volume negociado nas últimas 24h dividido pelo Market Cap. Verde ≥3% · Âmbar ≥1% · Vermelho <1%">
             <div class="stat-lbl">Volume 24h</div>
-            <div class="stat-val" id="s-vol-pct">—</div>  <!-- % em destaque (cor dinâmica via JS) -->
-            <div class="stat-sub"      id="s-vol">—</div>       <!-- USD discreto  -->
+            <div class="stat-val" id="s-vol-pct">—</div>
+            <div class="stat-sub" id="s-vol">—</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box" data-tip="Moedas atualmente em circulação no mercado. Não inclui moedas bloqueadas, queimadas ou ainda não emitidas.">
             <div class="stat-lbl">Circ. Supply</div>
             <div class="stat-val" id="s-supply">—</div>
             <div class="stat-sub" id="s-supply-pct">—</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box tip-left" data-tip="Total de moedas já criadas ou programadas para existir. Inclui circulantes + bloqueadas. Exceto as queimadas.">
             <div class="stat-lbl">Total Supply</div>
             <div class="stat-val" id="s-total">—</div>
           </div>
-          <div class="stat-box">
-            <!--
-              Volume 7D — calculado via /market_chart?days=7 da CoinGecko.
-              Soma os volumes diários dos últimos 7 dias e divide pelo MCap.
-              • % do MCap → grande, verde (destaque)
-              • Valor USD total → pequeno, muted (contexto)
-            -->
+          <div class="stat-box tip-right" data-tip="Volume total das últimas 7 dias dividido pelo Market Cap. Verde ≥15% · Âmbar ≥5% · Vermelho <5%">
             <div class="stat-lbl">Volume 7D</div>
-            <div class="stat-val" id="s-vol7-pct">—</div>  <!-- % em destaque (cor dinâmica via JS) -->
-            <div class="stat-sub"      id="s-vol7">—</div>       <!-- USD discreto  -->
+            <div class="stat-val" id="s-vol7-pct">—</div>
+            <div class="stat-sub" id="s-vol7">—</div>
           </div>
 
-          <div class="stat-box">
+          <div class="stat-box" data-tip="Circ. Supply ÷ Total Supply × 100. Quanto do supply total já está disponível no mercado.">
             <div class="stat-lbl">% Liberado</div>
             <div class="stat-val green" id="s-lib">—</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box tip-left" data-tip="100% − % Liberado. Supply ainda bloqueado: em vesting, reservas da equipe ou ainda não emitido.">
             <div class="stat-lbl">% Bloqueado</div>
             <div class="stat-val amber" id="s-locked">—</div>
           </div>
 
           <!-- span3 = ocupa as 3 colunas (linha inteira) -->
-          <div class="stat-box span3">
+          <div class="stat-box span3" data-tip="Total Value Locked: valor total em USD depositado nos contratos do protocolo. Fonte: DeFiLlama. Moedas sem protocolo DeFi exibem 'Projeto sem TVL'.">
             <div class="stat-lbl">TVL (DeFiLlama)</div>
             <div class="stat-val violet" id="s-tvl">—</div>
           </div>
@@ -1627,7 +1692,62 @@
 
     buildContracts(d.contracts);
     animateGauge(d.marketCap);
-  }
+
+    /* ══ TOOLTIPS DINÂMICOS — atualiza data-tip com os valores reais ══
+       Sobrescreve os textos estáticos do HTML com os números vindos
+       da API, igual ao projeto de referência.
+    */
+    function setTip(selector, text) {
+      var el = document.querySelector(selector);
+      if (el) el.setAttribute('data-tip', text);
+    }
+
+    var p  = fmtUSD(d.price);
+    var cs = fmtNum(d.circulatingSupply);
+    var ts = fmtNum(d.totalSupply);
+    var mc = fmtUSD(d.marketCap);
+    var v24 = fmtUSD(d.volume24h);
+
+    /* Preço */
+    setTip('[data-tip*="Preço atual"]',
+      'Último preço de mercado.\nAtualizado em: ' + new Date().toLocaleTimeString('pt-BR'));
+
+    /* Market Cap */
+    setTip('[data-tip*="Preço ×"]',
+      'Preço (' + p + ') × Circ. Supply (' + cs + ')');
+
+    /* FDV */
+    setTip('[data-tip*="Fully Diluted"]',
+      'Preço (' + p + ') × Total Supply (' + ts + ').\nSe todo o supply fosse emitido hoje.');
+
+    /* Volume 24h */
+    setTip('[data-tip*="Volume negociado nas últimas 24h"]',
+      'Volume 24h (' + v24 + ') ÷ Market Cap (' + mc + ').\nVerde ≥3% · Âmbar ≥1% · Vermelho <1%');
+
+    /* Circ. Supply */
+    setTip('[data-tip*="Moedas atualmente"]',
+      'Moedas em circulação: ' + cs + '.\nNão inclui bloqueadas, queimadas ou não emitidas.');
+
+    /* Total Supply */
+    setTip('[data-tip*="Total de moedas"]',
+      'Total Supply: ' + ts + '.\nCirculantes + bloqueadas (exceto queimadas).');
+
+    /* Volume 7D — atualizado depois quando o vol7 chegar */
+    /* % Liberado */
+    setTip('[data-tip*="Circ. Supply ÷"]',
+      'Circ. Supply (' + cs + ') ÷ Total Supply (' + ts + ') × 100.');
+
+    /* % Bloqueado */
+    setTip('[data-tip*="100%"]',
+      '100% − % Liberado.\nSo Supply ainda em vesting, reservas ou não emitido.');
+
+    /* TVL */
+    if (d.tvl && d.tvl > 0) {
+      setTip('[data-tip*="Total Value Locked"]',
+        'Total Value Locked: ' + fmtUSD(d.tvl) + '.\nValor depositado nos contratos do protocolo. Fonte: DeFiLlama.');
+    }
+
+  } /* fim renderResult */
 
   /* ══ CACHE ═══════════════════════════════════════════════════════
      Guarda resultados por 3 min. Segunda pesquisa da mesma moeda
@@ -1895,6 +2015,13 @@
             if (v7val) v7val.textContent = fmtUSD(sum7d);
             coinData.volume7d = sum7d; coinData.volume7dPct = pct7d;
             cacheSet(coinId, coinData);
+
+            /* Atualiza tooltip do Volume 7D com valores reais */
+            var box7d = document.querySelector('[data-tip*="Volume total das últimas 7"]');
+            if (box7d) {
+              box7d.setAttribute('data-tip',
+                'Vol. 7D (' + fmtUSD(sum7d) + ') ÷ Market Cap (' + fmtUSD(mcapUsd) + ').\nVerde ≥15% · Âmbar ≥5% · Vermelho <5%');
+            }
           })
           .catch(function() {
             if (_currentCoinId !== coinId) return;
@@ -1921,6 +2048,32 @@
       if (id) { document.getElementById('cryptoInput').value = id; triggerSearch(id); }
     });
   });
+
+  /* ══ TOOLTIPS MOBILE — tap para abrir, toca fora para fechar ════
+     Em dispositivos touch o hover CSS não dispara.
+     Toca no card → abre o tooltip; toca fora → fecha.
+  */
+  document.querySelectorAll('.stat-box[data-tip]').forEach(function(box) {
+    box.addEventListener('touchstart', function(e) {
+      var isOpen = box.classList.contains('tip-open');
+      /* fecha todos os outros primeiro */
+      document.querySelectorAll('.stat-box.tip-open').forEach(function(b) {
+        b.classList.remove('tip-open');
+      });
+      /* se estava fechado, abre este */
+      if (!isOpen) {
+        box.classList.add('tip-open');
+        e.stopPropagation();
+      }
+    }, { passive: true });
+  });
+
+  /* Toca fora de qualquer card → fecha todos */
+  document.addEventListener('touchstart', function() {
+    document.querySelectorAll('.stat-box.tip-open').forEach(function(b) {
+      b.classList.remove('tip-open');
+    });
+  }, { passive: true });
 
   </script>
 
