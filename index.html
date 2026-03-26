@@ -1610,7 +1610,17 @@
     setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)+'%'   : '—');
     setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2)+'%' : '—');
     setText('s-vol7',   d.volume7d  ? fmtUSD(d.volume7d) : '—');
-    setText('s-tvl',    d.tvl       ? fmtUSD(d.tvl)      : 'TVL não disponível');
+    /* TVL — verde se tem valor, muted se não tem */
+    var tvlEl = document.getElementById('s-tvl');
+    if (d.tvl && d.tvl > 0) {
+      tvlEl.textContent = fmtUSD(d.tvl);
+      tvlEl.className   = 'stat-val violet'; /* roxo = tem TVL */
+    } else {
+      tvlEl.textContent = 'Projeto sem TVL';
+      tvlEl.className   = 'stat-val';
+      tvlEl.style.color = '#3a3a60'; /* discreto */
+      tvlEl.style.fontSize = '13px';
+    }
 
     buildContracts(d.contracts);
     animateGauge(d.marketCap);
@@ -1746,8 +1756,40 @@
     }
 
     var urlCG    = 'https://api.coingecko.com/api/v3/coins/'+encodeURIComponent(coinId)+'?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false';
-    var urlLlama = 'https://api.llama.fi/tvl/'+encodeURIComponent(coinId);
     var urlVol7  = 'https://api.coingecko.com/api/v3/coins/'+encodeURIComponent(coinId)+'/market_chart?vs_currency=usd&days=7&interval=daily';
+
+    /*
+      DeFiLlama — tenta buscar TVL com múltiplos slugs.
+      A DeFiLlama usa slugs próprios que geralmente coincidem com o
+      ID do CoinGecko, mas nem sempre. Tentamos em sequência:
+        1. coinId original         (ex: "aave", "uniswap")
+        2. coinId sem sufixos      (ex: "avalanche-2" → "avalanche")
+        3. nome do projeto minúsculo (preenchido após CG responder)
+      Na primeira que retornar um número válido, usamos.
+    */
+    function fetchTvl(slugs) {
+      if (!slugs.length) return Promise.resolve(null);
+      var slug = slugs[0];
+      return fetchWithTimeout('https://api.llama.fi/tvl/'+encodeURIComponent(slug), 6000)
+        .then(function(r) {
+          if (!r.ok) throw new Error('sem TVL');
+          return r.json();
+        })
+        .then(function(val) {
+          /* Valida: deve ser um número positivo */
+          if (typeof val === 'number' && val > 0) return val;
+          throw new Error('sem TVL');
+        })
+        .catch(function() {
+          /* Tenta o próximo slug da lista */
+          return fetchTvl(slugs.slice(1));
+        });
+    }
+
+    /* Slug sem sufixos numéricos: "avalanche-2" → "avalanche" */
+    var coinIdClean = coinId.replace(/-\d+$/, '');
+    /* Slugs iniciais (nome do coin será adicionado depois que CG responder) */
+    var tvlSlugs = coinId === coinIdClean ? [coinId] : [coinId, coinIdClean];
 
     Promise.allSettled([
       fetchWithTimeout(urlCG, 15000).then(function(r) {
@@ -1757,11 +1799,10 @@
         if (!r.ok) throw new Error('HTTP_'+r.status);
         return r.json();
       }),
-      fetchWithTimeout(urlLlama, 8000).then(function(r) {
-        if (!r.ok) throw new Error('sem TVL'); return r.json();
-      })
+      /* Placeholder — TVL é buscado depois que temos o nome do coin */
+      Promise.resolve(null)
     ]).then(function(results) {
-      var cgResult = results[0], llamaResult = results[1];
+      var cgResult = results[0];
 
       if (cgResult.status === 'rejected') { showError(coinId, cgResult.reason ? cgResult.reason.message : 'Falha'); return; }
       var cgData = cgResult.value;
@@ -1772,8 +1813,20 @@
       var md    = cgData.market_data || {};
       var links = cgData.links       || {};
 
-      var tvlValue = null;
-      if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') tvlValue = llamaResult.value;
+      /*
+        Agora que temos o nome do coin, adicionamos à lista de slugs.
+        Ex: coin "Hey Anon" → slug "hey-anon" (lowercase, espaços → hífens)
+        Isso aumenta muito as chances de match na DeFiLlama.
+      */
+      var nameSlug = (cgData.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      var allSlugs = tvlSlugs.slice();
+      if (nameSlug && allSlugs.indexOf(nameSlug) === -1) allSlugs.push(nameSlug);
+      /* Símbolo também pode ser o slug (ex: "ETH" → "eth") */
+      var symSlug = (cgData.symbol || '').toLowerCase();
+      if (symSlug && allSlugs.indexOf(symSlug) === -1) allSlugs.push(symSlug);
+
+      /* Busca TVL com todos os slugs disponíveis */
+      fetchTvl(allSlugs).then(function(tvlValue) {
 
       var circ      = md.circulating_supply || null;
       var total     = md.total_supply       || null;
@@ -1846,7 +1899,9 @@
             if (v7pct) { v7pct.textContent = '—'; v7pct.style.color = ''; }
           });
       }, 3500);
-    });
+
+      }); /* fim fetchTvl */
+    }); /* fim allSettled */
   }
 
   /* ══ DISPARO DA BUSCA ════════════════════════════════════════════ */
