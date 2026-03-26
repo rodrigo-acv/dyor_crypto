@@ -3,7 +3,7 @@
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  DYOR — Crypto Research Dashboard                                    ║
 ║  Arquivo : index.html                                                ║
-║  Versão  : 3.0 — Página única (Home + Resultado integrados)          ║
+║  Versão  : 4.0 — Gauge velocímetro semicircular                      ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║                                                                      ║
 ║  MUDANÇAS DESTA VERSÃO                                               ║
@@ -529,96 +529,85 @@
     .stat-sub { font-size: 10px; color: var(--res-text-muted); margin-top: 3px; }
 
     /* ══════════════════════════════════════════════════════════════
-       CARD: GAUGE (Estágio de MarketCap)
-       Círculo SVG animado que representa o tamanho da moeda.
+       CARD: GAUGE — Velocímetro semicircular de Market Cap
 
        COMO FUNCIONA:
-       • O círculo cinza (#1a1a3a) é o trilho de fundo (sempre 100%)
-       • O círculo colorido é o arco de progresso
-       • stroke-dasharray=452.4 é a circunferência (2πr, r=72)
-       • stroke-dashoffset controla quanto do arco aparece:
-           offset=452.4 → 0% (nada visível)
-           offset=0     → 100% (círculo completo)
-       • O JS calcula o offset baseado no Market Cap
+       • Semicírculo de 180° dividido em 5 segmentos coloridos
+       • Cada segmento é um donut arc SVG preenchido (não stroke grosso)
+       • A agulha gira via CSS transform ao redor do pivô central
+       • Escala LOGARÍTMICA: $1M → $1T mapeados em 0° → 180°
+         (necessário pois os valores variam 6 ordens de grandeza)
 
-       Para mudar o RAIO do círculo:
-         1. Altere r="72" nos dois <circle>
-         2. Recalcule stroke-dasharray = 2 × 3.14159 × novoRaio
-         3. Atualize o comentário "r=72" na função animateGauge() do JS
+       NOVA CLASSIFICAÇÃO:
+         Gema      → vermelho  → < $10M
+         Pequena   → laranja   → $10M – $1B
+         Média     → amarelo   → $1B – $10B
+         Blue Chip → verde     → $10B – $200B
+         Mega Cap  → azul      → > $200B
+
+       DESTAQUE VISUAL:
+         • Valor do market cap → grande, fonte mono, cor da categoria
+         • Nome da categoria   → pequeno, discreto, abaixo do valor
+
+       PARA AJUSTAR TAMANHO DO GAUGE:
+         Mude as constantes CX, CY, R_OUT, R_IN na função buildGaugeSVG()
+         no bloco de scripts abaixo.
        ══════════════════════════════════════════════════════════════ */
     .gauge-card { grid-column: 3; }
 
-    .gauge-wrap {
-      position: relative;
-      width: 176px; height: 176px; /* ← tamanho do círculo — mude aqui e no SVG */
-      margin: 0 auto 16px;
-    }
-    .gauge-svg {
-      position: absolute; top: 0; left: 0;
-      transform: rotate(-90deg); /* faz o arco começar do topo */
-    }
-    .gauge-inner {
-      /* Centralizado dentro do círculo via position+transform */
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      width: 116px;
+    /* SVG ocupa toda a largura do card, altura proporcional ao viewBox */
+    #gauge-svg { width: 100%; display: block; }
+
+    /*
+      AGULHA — animação via CSS transform (não atributo SVG).
+      transform-origin: 0 0 porque o grupo pai já está transladado
+      para o centro do pivô via SVG transform="translate(CX, CY)".
+      O cubic-bezier dá o efeito "mola" na chegada.
+    */
+    #needle-rotate {
+      transform-origin: 0px 0px;
+      transition: transform 0.9s cubic-bezier(0.34, 1.45, 0.64, 1);
+      transform: rotate(180deg); /* início: aponta para a esquerda (gauge 0%) */
     }
 
-    /* Nome da categoria (ex: "Blue Chip") — gradiente pequeno */
-    .gauge-cat {
-      font-size: 12px; /* ← tamanho do nome da categoria no círculo */
-      font-weight: 800;
-      background: linear-gradient(135deg, #a78bfa, #38bdf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      line-height: 1.2;
-    }
+    /* Painel abaixo do gauge: valor (grande) + categoria (pequena) */
+    .gauge-info { text-align: center; padding: 2px 0 12px; }
 
-    /* Valor do Market Cap dentro do círculo
-       CORREÇÃO: era 26px (muito grande). Agora está em 15px.
-       Para ajustar o tamanho, mude o font-size aqui ↓           */
-    .gauge-mcap-val {
-      font-size: 15px; /* ← ESTE é o valor que aparece dentro do círculo */
-      font-weight: 700;
+    /* Market cap — DESTAQUE PRINCIPAL: grande, mono, cor da categoria */
+    .gauge-val {
+      font-size: 18px; font-weight: 700;
       font-family: 'JetBrains Mono', monospace;
-      color: #fff;
-      line-height: 1.2;
-      margin: 3px 0 2px;
-      word-break: break-all;
+      color: #fff; line-height: 1.2;
+      transition: color 0.4s ease;
     }
 
-    /* Rótulo "Market Cap" abaixo do valor — bem pequeno e discreto */
-    .gauge-mcap-lbl {
-      font-size: 9px;
-      color: var(--res-text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
+    /* Nome da categoria — SECUNDÁRIO: pequeno, discreto */
+    .gauge-cat-name {
+      font-size: 11px; font-weight: 600;
+      font-family: 'Outfit', sans-serif;
+      letter-spacing: 0.05em;
+      color: var(--res-text-muted); margin-top: 3px;
+      transition: color 0.4s ease;
     }
 
-    /* ── Lista de estágios abaixo do círculo ── */
-    .stages { display: flex; flex-direction: column; gap: 5px; }
+    /* ── Lista de estágios abaixo do velocímetro ── */
+    .stages { display: flex; flex-direction: column; gap: 3px; }
 
     .stage {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 10px;
-      border-radius: 8px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 9px; border-radius: 8px;
       border: 1px solid transparent;
-      transition: all 0.25s;
+      transition: all 0.25s ease;
     }
-    /* Estágio ativo (o da moeda pesquisada) fica destacado */
+    /* Estágio ativo (categoria da moeda pesquisada) fica destacado */
     .stage.active {
       background: var(--res-violet-soft);
       border-color: var(--res-border-h);
     }
     .stage-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .stage-name { font-size: 11px; font-weight: 600; color: var(--res-text-muted); flex: 1; }
+    .stage-name { font-size: 11px; font-weight: 600; color: var(--res-text-muted); flex: 1; transition: color 0.25s; }
     .stage.active .stage-name { color: var(--res-text); }
-    .stage-range { font-size: 10px; color: var(--res-text-dim); font-family: 'JetBrains Mono', monospace; }
+    .stage-range { font-size: 10px; color: var(--res-text-dim); font-family: 'JetBrains Mono', monospace; transition: color 0.25s; }
     .stage.active .stage-range { color: var(--res-text-muted); }
 
     /* ══════════════════════════════════════════════════════════════
@@ -955,85 +944,60 @@
         </div>
       </div>
 
-      <!-- ════ CARD 3: GAUGE (Estágio de MarketCap) ══════════════
-           SVG animado. Os IDs usados pelo JS são:
-             #gauge-arc → o arco colorido (stroke-dashoffset muda)
-             #g-cat     → nome da categoria (ex: "Blue Chip")
-             #g-mcap    → valor do market cap (ex: "US$ 51.09 B")
+      <!-- ════ CARD 3: GAUGE — Velocímetro de Market Cap ══════════
+           SVG semicircular gerado inteiramente pelo JS (buildGaugeSVG).
+           IDs usados pelo JS:
+             #gauge-svg        → SVG principal (recebe os segmentos)
+             #needle-rotate    → grupo que gira (agulha)
+             #gauge-val        → texto do market cap (destaque)
+             #gauge-cat-name   → texto da categoria (secundário)
+             #st-{nome}        → linhas da legenda (.active no estágio atual)
+
+           Para personalizar cores/limites → edite o array GAUGE_STAGES
+           na função buildGaugeSVG() no bloco de scripts abaixo.
            ════════════════════════════════════════════════════════ -->
       <div class="card gauge-card">
         <div class="card-label">🏷️ Estágio</div>
 
-        <div class="gauge-wrap">
-          <!-- SVG do círculo animado
-               width/height devem bater com .gauge-wrap (176x176)
-               cx, cy = centro = 176/2 = 88
-               r = 72 (raio do arco)
-               stroke-dasharray = 2 × π × 72 ≈ 452.4 (circunferência) -->
-          <svg class="gauge-svg" width="176" height="176">
-            <defs>
-              <!-- Gradiente do arco colorido — pode personalizar as cores aqui -->
-              <linearGradient id="gGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%"   stop-color="#a78bfa"/>
-                <stop offset="50%"  stop-color="#6c5ce7"/>
-                <stop offset="100%" stop-color="#38bdf8"/>
-              </linearGradient>
-            </defs>
-            <!-- Trilho cinza de fundo (sempre completo) -->
-            <circle cx="88" cy="88" r="72"
-              fill="none" stroke="#1a1a3a" stroke-width="16" stroke-linecap="round"/>
-            <!-- Arco de progresso — o JS anima stroke-dashoffset -->
-            <circle cx="88" cy="88" r="72"
-              id="gauge-arc"
-              fill="none"
-              stroke="url(#gGrad)"
-              stroke-width="16"
-              stroke-linecap="round"
-              stroke-dasharray="452.4"
-              stroke-dashoffset="452.4"
-              style="transition: stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1);"/>
-          </svg>
+        <!--
+          O SVG é injetado aqui pelo JS ao inicializar a página.
+          viewBox "0 0 300 195": CX=150, CY=172, R_OUT=138, R_IN=88
+        -->
+        <svg id="gauge-svg" viewBox="0 0 300 195" xmlns="http://www.w3.org/2000/svg">
+          <!-- Trilha de fundo (donut escuro) -->
+          <path id="gauge-bg-track" fill="#151530"/>
+          <!-- Segmentos coloridos (donut arcs) — injetados pelo JS -->
+          <g id="gauge-segments"></g>
+          <!-- Ticks separadores entre segmentos — injetados pelo JS -->
+          <g id="gauge-ticks"></g>
+          <!--
+            Agulha: triângulo apontando para a DIREITA a partir de (0,0).
+            O grupo pai translate(CX,CY) posiciona o pivô na tela.
+            O grupo filho #needle-rotate gira via CSS transform.
+          -->
+          <g id="needle-translate" transform="translate(150, 172)">
+            <g id="needle-rotate">
+              <!-- Sombra da agulha (levemente deslocada para baixo) -->
+              <polygon points="-12,4  112,2  -12,7" fill="rgba(0,0,0,0.45)"/>
+              <!-- Corpo: base em x=-12, ponta em x=112 -->
+              <polygon points="-12,-3.5  112,0  -12,3.5" fill="#dcdcf0"/>
+            </g>
+            <!-- Pivô — fica SOBRE a agulha, não gira com ela -->
+            <circle r="13"  fill="#0d0d22"/>
+            <circle r="9"   fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>
+            <circle r="5.5" fill="#c8c8e8"/>
+          </g>
+        </svg>
 
-          <!-- Conteúdo centralizado dentro do círculo -->
-          <div class="gauge-inner">
-            <!-- Nome da categoria: Gema / Pequena / Média / Blue Chip / Big Player -->
-            <div class="gauge-cat" id="g-cat">—</div>
-            <!-- Valor do Market Cap — CORRIGIDO para 15px (era 26px antes) -->
-            <div class="gauge-mcap-val" id="g-mcap">US$ —</div>
-            <!-- Rótulo discreto "Market Cap" -->
-            <div class="gauge-mcap-lbl">Market Cap</div>
-          </div>
+        <!-- Market cap (destaque) + nome da categoria (secundário) -->
+        <div class="gauge-info">
+          <div class="gauge-val"      id="gauge-val">—</div>
+          <div class="gauge-cat-name" id="gauge-cat-name">—</div>
         </div>
 
-        <!-- Lista de estágios — o ativo recebe a classe .active via JS -->
-        <div class="stages">
-          <!-- id="st-NOME" → o JS adiciona .active no estágio correto -->
-          <div class="stage" id="st-gema">
-            <div class="stage-dot" style="background:#64748b;"></div>
-            <span class="stage-name">Gema</span>
-            <span class="stage-range">&lt;150M</span>
-          </div>
-          <div class="stage" id="st-pequena">
-            <div class="stage-dot" style="background:#34d399;"></div>
-            <span class="stage-name">Pequena</span>
-            <span class="stage-range">150M–1B</span>
-          </div>
-          <div class="stage" id="st-media">
-            <div class="stage-dot" style="background:#38bdf8;"></div>
-            <span class="stage-name">Média</span>
-            <span class="stage-range">1B–10B</span>
-          </div>
-          <div class="stage" id="st-bluechip">
-            <div class="stage-dot" style="background:#a78bfa;"></div>
-            <span class="stage-name">Blue Chip</span>
-            <span class="stage-range">10B–300B</span>
-          </div>
-          <div class="stage" id="st-bigplayer">
-            <div class="stage-dot" style="background:#fbbf24;"></div>
-            <span class="stage-name">Big Player</span>
-            <span class="stage-range">&gt;300B</span>
-          </div>
-        </div>
+        <!-- Legenda dos 5 estágios — gerada pelo JS (buildGaugeLegend) -->
+        <div class="stages" id="gauge-stages"></div>
+
       </div>
 
     </div>
@@ -1354,75 +1318,231 @@
 
 
   /* ════════════════════════════════════════════════════════════════
-     CATEGORIAS DE MARKET CAP
-     getCategory() devolve { name, id, color } para o gauge.
+     GAUGE VELOCÍMETRO — constantes, geometria e renderização
+     ════════════════════════════════════════════════════════════════
 
-     Para mudar os limites de cada categoria, altere os valores abaixo:
-       300e9 → 300 bilhões (Big Player)
-        10e9 → 10 bilhões  (Blue Chip)
-         1e9 → 1 bilhão    (Média)
-       150e6 → 150 milhões (Pequena)
-       abaixo de 150M      (Gema)
-     ════════════════════════════════════════════════════════════════ */
-  function getCategory(mcap) {
-    if (mcap >= 300e9) return { name: 'Big Player', id: 'bigplayer', color: '#fbbf24' }; /* amarelo */
-    if (mcap >=  10e9) return { name: 'Blue Chip',  id: 'bluechip',  color: '#a78bfa' }; /* roxo    */
-    if (mcap >=   1e9) return { name: 'Média',      id: 'media',     color: '#38bdf8' }; /* azul    */
-    if (mcap >= 150e6) return { name: 'Pequena',    id: 'pequena',   color: '#34d399' }; /* verde   */
-    return                    { name: 'Gema',       id: 'gema',      color: '#64748b' }; /* cinza   */
+     NOVA CLASSIFICAÇÃO DE MARKET CAP (5 faixas):
+       Gema      → < $10M      → vermelho  → projetos experimentais
+       Pequena   → $10M–$1B   → laranja   → small cap em crescimento
+       Média     → $1B–$10B   → amarelo   → mid cap consolidada
+       Blue Chip → $10B–$200B → verde     → large cap estabelecida
+       Mega Cap  → > $200B    → azul      → escala global (BTC, ETH)
+
+     ESCALA LOGARÍTMICA:
+       Usamos log10 pois os valores variam de $1M a $1T+ (6 ordens).
+       Sem log, a faixa "Gema" ocuparia menos de 1% do visual.
+       Com log, todas as faixas ficam visualmente proporcionais.
+
+     TÉCNICA DO DONUT ARC:
+       Cada segmento é um path SVG preenchido com 4 pontos:
+         arco externo (sweep=1, horário → via topo ✓)
+         linha para borda interna
+         arco interno (sweep=0, anti-horário → via topo ✓)
+         fecha (Z)
+       Sweep flags incorretos causam o efeito "banana" (arcos pelo fundo).
+  */
+
+  /* ── Constantes do gauge (ajuste aqui para redimensionar) ── */
+  var GAUGE_CX    = 150;   /* centro horizontal no viewBox "0 0 300 195" */
+  var GAUGE_CY    = 172;   /* centro vertical — empurrado para baixo     */
+  var GAUGE_R_OUT = 138;   /* raio externo dos segmentos                 */
+  var GAUGE_R_IN  = 88;    /* raio interno dos segmentos (espessura=50)  */
+  var GAUGE_GAP   = 0;     /* graus de gap entre segmentos (0=sem borda) */
+                           /* use 0.8 para borda fina, 2.5 para gap largo */
+
+  /* Escala log: $1M (log=6) → $1T (log=12) mapeados em 0°→180° */
+  var GAUGE_LOG_MIN = 6;
+  var GAUGE_LOG_MAX = 12;
+
+  /*
+    GAUGE_STAGES — array com os 5 estágios.
+    Para alterar limites, cores ou nomes: edite apenas este array.
+    Campos: name, color, min (USD), max (USD), range (exibição), id (para .active)
+  */
+  var GAUGE_STAGES = [
+    { name: 'Gema',      color: '#ef4444', min: 0,    max: 1e7,      range: '< $10M',       id: 'gema'      },
+    { name: 'Pequena',   color: '#f97316', min: 1e7,  max: 1e9,      range: '$10M – $1B',   id: 'pequena'   },
+    { name: 'Média',     color: '#eab308', min: 1e9,  max: 1e10,     range: '$1B – $10B',   id: 'media'     },
+    { name: 'Blue Chip', color: '#22c55e', min: 1e10, max: 2e11,     range: '$10B – $200B', id: 'bluechip'  },
+    { name: 'Mega Cap',  color: '#3b82f6', min: 2e11, max: Infinity, range: '> $200B',      id: 'megacap'   },
+  ];
+
+  /* Converte market cap em ângulo do gauge (0°=esq, 180°=dir) */
+  function gaugeAngle(mcap) {
+    var clamped = Math.max(1e6, Math.min(1e12, mcap));
+    return ((Math.log10(clamped) - GAUGE_LOG_MIN) / (GAUGE_LOG_MAX - GAUGE_LOG_MIN)) * 180;
+  }
+
+  /* Ângulos de fronteira calculados automaticamente pelos limites */
+  var GAUGE_BOUNDS = [
+    0,
+    gaugeAngle(1e7),   /* $10M  ≈  30° */
+    gaugeAngle(1e9),   /* $1B   =  90° */
+    gaugeAngle(1e10),  /* $10B  ≈ 120° */
+    gaugeAngle(2e11),  /* $200B ≈ 159° */
+    180
+  ];
+
+  /*
+    gaugePt(r, alpha) — ângulo do gauge → coordenadas SVG
+    Sistema: alpha=0°=esq, alpha=90°=topo, alpha=180°=dir
+    Fórmulas: x = CX - r·cos(α)
+              y = CY - r·sin(α)  (subtrai porque y cresce para baixo)
+  */
+  function gaugePt(r, alpha) {
+    var rad = alpha * Math.PI / 180;
+    return {
+      x: GAUGE_CX - r * Math.cos(rad),
+      y: GAUGE_CY - r * Math.sin(rad)
+    };
+  }
+
+  function gF(n) { return n.toFixed(3); }
+
+  /*
+    gaugeSegPath(a1, a2) — gera o path SVG de um segmento donut.
+
+    CORREÇÃO CRÍTICA dos sweep flags:
+      Arco externo (esq→dir via TOPO): sweep=1 (horário)    ✓
+      Arco interno (dir→esq via TOPO): sweep=0 (anti-hor.)  ✓
+      Se invertidos, os arcos vão pelo fundo → efeito "banana" ❌
+  */
+  function gaugeSegPath(a1, a2) {
+    var s = a1 + GAUGE_GAP;
+    var e = a2 - GAUGE_GAP;
+    if (s >= e) return 'M 0 0';
+    var o1 = gaugePt(GAUGE_R_OUT, s);
+    var o2 = gaugePt(GAUGE_R_OUT, e);
+    var i2 = gaugePt(GAUGE_R_IN,  e);
+    var i1 = gaugePt(GAUGE_R_IN,  s);
+    var la = (e - s) > 180 ? 1 : 0;
+    return [
+      'M '  + gF(o1.x) + ' ' + gF(o1.y),
+      'A '  + GAUGE_R_OUT + ' ' + GAUGE_R_OUT + ' 0 ' + la + ' 1 ' + gF(o2.x) + ' ' + gF(o2.y),
+      'L '  + gF(i2.x) + ' ' + gF(i2.y),
+      'A '  + GAUGE_R_IN  + ' ' + GAUGE_R_IN  + ' 0 ' + la + ' 0 ' + gF(i1.x) + ' ' + gF(i1.y),
+      'Z'
+    ].join(' ');
+  }
+
+  /* Retorna o estágio correspondente ao market cap */
+  function gaugeGetStage(mcap) {
+    for (var i = GAUGE_STAGES.length - 1; i >= 0; i--) {
+      if (mcap >= GAUGE_STAGES[i].min) return GAUGE_STAGES[i];
+    }
+    return GAUGE_STAGES[0];
   }
 
   /*
-    gaugePct() — converte o Market Cap em % para o arco do gauge.
-    Usa escala por faixas (não linear) para que todas as categorias
-    sejam visualmente distinguíveis mesmo com faixas muito diferentes.
-
-    Mapeamento:
-      0        →  0%
-      150M     → 15%
-      1B       → 30%
-      10B      → 50%
-      300B     → 100%
+    buildGaugeSVG() — constrói os elementos SVG do velocímetro.
+    Chamada UMA VEZ ao inicializar. Não recria os elementos a cada busca.
   */
-  function gaugePct(mcap) {
-    if (mcap >= 300e9) return 100;
-    if (mcap >=  10e9) return 50 + (mcap -  10e9) / (300e9 -  10e9) * 50;
-    if (mcap >=   1e9) return 30 + (mcap -   1e9) / ( 10e9 -   1e9) * 20;
-    if (mcap >= 150e6) return 15 + (mcap - 150e6) / (  1e9 - 150e6) * 15;
-    return (mcap / 150e6) * 15;
-  }
+  function buildGaugeSVG() {
+    var NS  = 'http://www.w3.org/2000/svg';
+    function svgEl(tag, attrs) {
+      var e = document.createElementNS(NS, tag);
+      Object.entries(attrs).forEach(function(kv) { e.setAttribute(kv[0], kv[1]); });
+      return e;
+    }
 
+    /* Trilha de fundo (donut escuro ligeiramente maior que os segmentos) */
+    var bgO1 = gaugePt(GAUGE_R_OUT + 7, 0);
+    var bgO2 = gaugePt(GAUGE_R_OUT + 7, 180);
+    var bgI2 = gaugePt(GAUGE_R_IN  - 7, 180);
+    var bgI1 = gaugePt(GAUGE_R_IN  - 7, 0);
+    document.getElementById('gauge-bg-track').setAttribute('d', [
+      'M ' + gF(bgO1.x) + ' ' + gF(bgO1.y),
+      'A ' + (GAUGE_R_OUT+7) + ' ' + (GAUGE_R_OUT+7) + ' 0 0 1 ' + gF(bgO2.x) + ' ' + gF(bgO2.y),
+      'L ' + gF(bgI2.x) + ' ' + gF(bgI2.y),
+      'A ' + (GAUGE_R_IN-7)  + ' ' + (GAUGE_R_IN-7)  + ' 0 0 0 ' + gF(bgI1.x) + ' ' + gF(bgI1.y),
+      'Z'
+    ].join(' '));
 
-  /* ════════════════════════════════════════════════════════════════
-     GAUGE — anima o círculo SVG
-     Chamado com o Market Cap em USD (número puro, sem formatação).
-     ════════════════════════════════════════════════════════════════ */
-  function animateGauge(mcap) {
-    var cat  = getCategory(mcap);
-    var pct  = gaugePct(mcap);
-    var circ = 2 * Math.PI * 72; /* circunferência: 2 × π × r (r=72) ≈ 452.4 */
-    var offset = circ - (circ * pct / 100);
-
-    /* Destaca o estágio ativo na lista abaixo do círculo */
-    ['gema', 'pequena', 'media', 'bluechip', 'bigplayer'].forEach(function (s) {
-      var el = document.getElementById('st-' + s);
-      if (el) el.classList.toggle('active', s === cat.id);
+    /* Segmentos coloridos */
+    var segsGroup = document.getElementById('gauge-segments');
+    GAUGE_STAGES.forEach(function(stage, i) {
+      segsGroup.appendChild(svgEl('path', {
+        d: gaugeSegPath(GAUGE_BOUNDS[i], GAUGE_BOUNDS[i + 1]),
+        fill: stage.color
+      }));
     });
 
-    /* Muda a cor do arco conforme a categoria */
-    document.getElementById('gauge-arc').setAttribute('stroke', cat.color);
-
-    /* Texto dentro do círculo */
-    document.getElementById('g-cat').textContent  = cat.name;
-    document.getElementById('g-mcap').textContent = fmtUSD(mcap);
-
-    /* Reseta o arco e anima para o valor correto após 120ms
-       (o setTimeout garante que o reset apareça antes da animação) */
-    document.getElementById('gauge-arc').style.strokeDashoffset = circ;
-    setTimeout(function () {
-      document.getElementById('gauge-arc').style.strokeDashoffset = offset;
-    }, 120);
+    /* Ticks separadores (linhas finas na cor do fundo entre os segmentos) */
+    var ticksGroup = document.getElementById('gauge-ticks');
+    for (var i = 1; i < GAUGE_BOUNDS.length - 1; i++) {
+      var pI = gaugePt(GAUGE_R_IN  - 6, GAUGE_BOUNDS[i]);
+      var pO = gaugePt(GAUGE_R_OUT + 6, GAUGE_BOUNDS[i]);
+      ticksGroup.appendChild(svgEl('line', {
+        x1: gF(pO.x), y1: gF(pO.y),
+        x2: gF(pI.x), y2: gF(pI.y),
+        stroke: '#0d0d22', 'stroke-width': '1.5', 'stroke-linecap': 'butt'
+      }));
+    }
   }
+
+  /*
+    buildGaugeLegend() — gera as linhas da legenda (estágios) uma vez.
+    O JS apenas adiciona/remove .active a cada busca.
+  */
+  function buildGaugeLegend() {
+    var container = document.getElementById('gauge-stages');
+    if (!container) return;
+    container.innerHTML = '';
+    GAUGE_STAGES.forEach(function(s) {
+      var item = document.createElement('div');
+      item.className = 'stage';
+      item.id = 'st-' + s.id;
+      item.innerHTML =
+        '<div class="stage-dot" style="background:' + s.color + '"></div>' +
+        '<span class="stage-name">' + s.name + '</span>' +
+        '<span class="stage-range">' + s.range + '</span>';
+      container.appendChild(item);
+    });
+  }
+
+  /*
+    animateGauge(mcap) — atualiza o velocímetro com o market cap da API.
+    Chamada por renderResult() a cada nova busca.
+
+    Parâmetro: mcap → número em USD (ex: 51090000000 para Solana)
+  */
+  function animateGauge(mcap) {
+    var stage   = gaugeGetStage(mcap);
+    var angle   = gaugeAngle(mcap);
+
+    /* Rotação da agulha:
+       rotate(180°) → aponta esq = mínimo do gauge
+       rotate(270°) → aponta cima = meio do gauge
+       rotate(360°) → aponta dir = máximo do gauge
+       Fórmula: CSS rotate = 180 + ânguloGauge                    */
+    var cssAngle = 180 + angle;
+    var needleEl = document.getElementById('needle-rotate');
+    if (needleEl) needleEl.style.transform = 'rotate(' + cssAngle + 'deg)';
+
+    /* Market cap em destaque (grande, mono, cor da categoria) */
+    var valEl = document.getElementById('gauge-val');
+    if (valEl) {
+      valEl.textContent = fmtUSD(mcap);
+      valEl.style.color = stage.color;
+    }
+
+    /* Nome da categoria (pequeno, discreto, levemente colorido) */
+    var catEl = document.getElementById('gauge-cat-name');
+    if (catEl) {
+      catEl.textContent = stage.name;
+      catEl.style.color = stage.color + 'bb'; /* 73% de opacidade */
+    }
+
+    /* Destaca o estágio ativo na legenda */
+    GAUGE_STAGES.forEach(function(s) {
+      var el = document.getElementById('st-' + s.id);
+      if (el) el.classList.toggle('active', s.id === stage.id);
+    });
+  }
+
+  /* Inicializa o gauge (constrói SVG e legenda uma única vez) */
+  buildGaugeSVG();
+  buildGaugeLegend();
 
 
   /* ════════════════════════════════════════════════════════════════
