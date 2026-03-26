@@ -1037,52 +1037,52 @@
         <div class="card-label">📊 Estatísticas</div>
         <div class="stats-grid">
 
-          <div class="stat-box" data-tip="Preço atual de mercado. Atualizado a cada pesquisa via CoinGecko.">
+          <div class="stat-box" data-card="preco" data-tip="Preço atual de mercado. Atualizado a cada pesquisa via CoinGecko.">
             <div class="stat-lbl">Preço</div>
             <div class="stat-val" id="s-price">—</div>
             <div class="stat-sub" id="s-chg">—</div>  <!-- variação 24h -->
           </div>
-          <div class="stat-box" data-tip="Preço × Circulating Supply. Representa o valor total das moedas em circulação hoje.">
+          <div class="stat-box" data-card="mcap" data-tip="Preço × Circulating Supply. Representa o valor total das moedas em circulação hoje.">
             <div class="stat-lbl">Market Cap</div>
             <div class="stat-val violet" id="s-mcap">—</div>
             <div class="stat-sub" id="s-mcap-rank">—</div>
           </div>
-          <div class="stat-box" data-tip="Fully Diluted Valuation: Preço × Total Supply. Estimativa do valor se TODAS as moedas fossem emitidas hoje.">
+          <div class="stat-box" data-card="fdv" data-tip="Fully Diluted Valuation: Preço × Total Supply. Estimativa do valor se TODAS as moedas fossem emitidas hoje.">
             <div class="stat-lbl">FDV</div>
             <div class="stat-val" id="s-fdv">—</div>
           </div>
 
-          <div class="stat-box" data-tip="Volume negociado nas últimas 24h dividido pelo Market Cap. Verde ≥3% · Âmbar ≥1% · Vermelho <1%">
+          <div class="stat-box" data-card="vol24" data-tip="Volume negociado nas últimas 24h dividido pelo Market Cap. Verde ≥3% · Âmbar ≥1% · Vermelho <1%">
             <div class="stat-lbl">Volume 24h</div>
             <div class="stat-val" id="s-vol-pct">—</div>
             <div class="stat-sub" id="s-vol">—</div>
           </div>
-          <div class="stat-box" data-tip="Moedas atualmente em circulação no mercado. Não inclui moedas bloqueadas, queimadas ou ainda não emitidas.">
+          <div class="stat-box" data-card="supply" data-tip="Moedas atualmente em circulação no mercado. Não inclui moedas bloqueadas, queimadas ou ainda não emitidas.">
             <div class="stat-lbl">Circ. Supply</div>
             <div class="stat-val" id="s-supply">—</div>
             <div class="stat-sub" id="s-supply-pct">—</div>
           </div>
-          <div class="stat-box" data-tip="Total de moedas já criadas ou programadas para existir. Inclui circulantes + bloqueadas. Exceto as queimadas.">
+          <div class="stat-box" data-card="total" data-tip="Total de moedas já criadas ou programadas para existir. Inclui circulantes + bloqueadas. Exceto as queimadas.">
             <div class="stat-lbl">Total Supply</div>
             <div class="stat-val" id="s-total">—</div>
           </div>
-          <div class="stat-box" data-tip="Volume total das últimas 7 dias dividido pelo Market Cap. Verde ≥15% · Âmbar ≥5% · Vermelho <5%">
+          <div class="stat-box" data-card="vol7" data-tip="Volume total das últimas 7 dias dividido pelo Market Cap. Verde ≥15% · Âmbar ≥5% · Vermelho <5%">
             <div class="stat-lbl">Volume 7D</div>
             <div class="stat-val" id="s-vol7-pct">—</div>
             <div class="stat-sub" id="s-vol7">—</div>
           </div>
 
-          <div class="stat-box" data-tip="Circ. Supply ÷ Total Supply × 100. Quanto do supply total já está disponível no mercado.">
+          <div class="stat-box" data-card="lib" data-tip="Circ. Supply ÷ Total Supply × 100. Quanto do supply total já está disponível no mercado.">
             <div class="stat-lbl">% Liberado</div>
             <div class="stat-val green" id="s-lib">—</div>
           </div>
-          <div class="stat-box" data-tip="100% − % Liberado. Supply ainda bloqueado: em vesting, reservas da equipe ou ainda não emitido.">
+          <div class="stat-box" data-card="locked" data-tip="100% − % Liberado. Supply ainda bloqueado: em vesting, reservas da equipe ou ainda não emitido.">
             <div class="stat-lbl">% Bloqueado</div>
             <div class="stat-val amber" id="s-locked">—</div>
           </div>
 
           <!-- span3 = ocupa as 3 colunas (linha inteira) -->
-          <div class="stat-box span3" data-tip="Total Value Locked: valor total em USD depositado nos contratos do protocolo. Fonte: DeFiLlama. Moedas sem protocolo DeFi exibem 'Projeto sem TVL'.">
+          <div class="stat-box span3" data-card="tvl" data-tip="Total Value Locked: valor total em USD depositado nos contratos do protocolo. Fonte: DeFiLlama. Moedas sem protocolo DeFi exibem 'Projeto sem TVL'.">
             <div class="stat-lbl">TVL (DeFiLlama)</div>
             <div class="stat-val violet" id="s-tvl">—</div>
           </div>
@@ -1676,53 +1676,48 @@
        Sobrescreve os textos estáticos do HTML com os números vindos
        da API, igual ao projeto de referência.
     */
-    function setTip(selector, text) {
-      var el = document.querySelector(selector);
+    /*
+      TOOLTIPS DINÂMICOS — usa data-card="id" como seletor estável.
+      Isso garante que o setTip funciona em TODOS os refreshes,
+      mesmo depois que o data-tip já foi alterado pela renderização anterior.
+    */
+    function setTip(card, text) {
+      var el = document.querySelector('[data-card="' + card + '"]');
       if (el) el.setAttribute('data-tip', text);
     }
 
-    var p  = fmtUSD(d.price);
-    var cs = fmtNum(d.circulatingSupply);
-    var ts = fmtNum(d.totalSupply);
-    var mc = fmtUSD(d.marketCap);
+    var p   = fmtUSD(d.price);
+    var cs  = fmtNum(d.circulatingSupply);
+    var ts  = fmtNum(d.totalSupply);
+    var mc  = fmtUSD(d.marketCap);
     var v24 = fmtUSD(d.volume24h);
 
-    /* Preço */
-    setTip('[data-tip*="Preço atual"]',
+    setTip('preco',
       'Último preço de mercado.\nAtualizado em: ' + new Date().toLocaleTimeString('pt-BR'));
 
-    /* Market Cap */
-    setTip('[data-tip*="Preço ×"]',
+    setTip('mcap',
       'Preço (' + p + ') × Circ. Supply (' + cs + ')');
 
-    /* FDV */
-    setTip('[data-tip*="Fully Diluted"]',
+    setTip('fdv',
       'Preço (' + p + ') × Total Supply (' + ts + ').\nSe todo o supply fosse emitido hoje.');
 
-    /* Volume 24h */
-    setTip('[data-tip*="Volume negociado nas últimas 24h"]',
+    setTip('vol24',
       'Volume 24h (' + v24 + ') ÷ Market Cap (' + mc + ').\nVerde ≥3% · Âmbar ≥1% · Vermelho <1%');
 
-    /* Circ. Supply */
-    setTip('[data-tip*="Moedas atualmente"]',
+    setTip('supply',
       'Moedas em circulação: ' + cs + '.\nNão inclui bloqueadas, queimadas ou não emitidas.');
 
-    /* Total Supply */
-    setTip('[data-tip*="Total de moedas"]',
+    setTip('total',
       'Total Supply: ' + ts + '.\nCirculantes + bloqueadas (exceto queimadas).');
 
-    /* Volume 7D — atualizado depois quando o vol7 chegar */
-    /* % Liberado */
-    setTip('[data-tip*="Circ. Supply ÷"]',
+    setTip('lib',
       'Circ. Supply (' + cs + ') ÷ Total Supply (' + ts + ') × 100.');
 
-    /* % Bloqueado */
-    setTip('[data-tip*="100%"]',
-      '100% − % Liberado.\nSo Supply ainda em vesting, reservas ou não emitido.');
+    setTip('locked',
+      '100% − % Liberado.\nSupply ainda em vesting, reservas ou não emitido.');
 
-    /* TVL */
     if (d.tvl && d.tvl > 0) {
-      setTip('[data-tip*="Total Value Locked"]',
+      setTip('tvl',
         'Total Value Locked: ' + fmtUSD(d.tvl) + '.\nValor depositado nos contratos do protocolo. Fonte: DeFiLlama.');
     }
 
@@ -1999,7 +1994,7 @@
             cacheSet(coinId, coinData);
 
             /* Atualiza tooltip do Volume 7D com valores reais */
-            var box7d = document.querySelector('[data-tip*="Volume total das últimas 7"]');
+            var box7d = document.querySelector('[data-card="vol7"]');
             if (box7d) {
               box7d.setAttribute('data-tip',
                 'Vol. 7D (' + fmtUSD(sum7d) + ') ÷ Market Cap (' + fmtUSD(mcapUsd) + ').\nVerde ≥15% · Âmbar ≥5% · Vermelho <5%');
