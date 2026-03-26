@@ -354,7 +354,7 @@
     }
 
     /* ══════════════════════════════════════════════════════════════
-       GRADE DOS 3 CARDS: [Contratos] [Estatísticas] [Estágio / MARKEY CAP]
+       GRADE DOS 3 CARDS: [Contratos] [Estatísticas] [Estágio]
        grid-template-columns define as larguras:
          260px → card de contratos (fixo, pequeno)
          1fr   → estatísticas (cresce para ocupar o resto)
@@ -955,9 +955,15 @@
           </div>
 
           <div class="stat-box">
+            <!--
+              Volume 24h — HIERARQUIA INVERTIDA vs versão anterior:
+              • % do MCap → grande, verde (destaque — o que importa)
+              • Valor USD  → pequeno, muted (contexto)
+              O JS preenche s-vol-pct com o % e s-vol com o USD.
+            -->
             <div class="stat-lbl">Volume 24h</div>
-            <div class="stat-val" id="s-vol">—</div>
-            <div class="stat-sub" id="s-vol-pct">—</div>
+            <div class="stat-val green" id="s-vol-pct">—</div>  <!-- % em destaque -->
+            <div class="stat-sub"      id="s-vol">—</div>       <!-- USD discreto  -->
           </div>
           <div class="stat-box">
             <div class="stat-lbl">Circ. Supply</div>
@@ -969,8 +975,15 @@
             <div class="stat-val" id="s-total">—</div>
           </div>
           <div class="stat-box">
+            <!--
+              Volume 7D — calculado via /market_chart?days=7 da CoinGecko.
+              Soma os volumes diários dos últimos 7 dias e divide pelo MCap.
+              • % do MCap → grande, verde (destaque)
+              • Valor USD total → pequeno, muted (contexto)
+            -->
             <div class="stat-lbl">Volume 7D</div>
-            <div class="stat-val" id="s-vol7">—</div>
+            <div class="stat-val green" id="s-vol7-pct">—</div>  <!-- % em destaque -->
+            <div class="stat-sub"      id="s-vol7">—</div>       <!-- USD discreto  -->
           </div>
 
           <div class="stat-box">
@@ -1004,7 +1017,7 @@
            na função buildGaugeSVG() no bloco de scripts abaixo.
            ════════════════════════════════════════════════════════ -->
       <div class="card gauge-card">
-        <div class="card-label">🏷️ ESTÁGIO DO MARKET CAP</div>
+        <div class="card-label">🏷️ Estágio</div>
 
         <!--
           O SVG é injetado aqui pelo JS ao inicializar a página.
@@ -1769,17 +1782,37 @@
     setText('s-mcap',      fmtUSD(d.marketCap));
     setText('s-mcap-rank', 'Ranking #' + d.rank);
     setText('s-fdv',       fmtUSD(d.fdv));
-    setText('s-vol',       fmtUSD(d.volume24h));
-    document.getElementById('s-vol-pct').textContent =
-      d.volumePct ? d.volumePct.toFixed(2) + '% do MCap' : '—';
+
+    /*
+      Volume 24h — hierarquia invertida:
+      • s-vol-pct → % do MCap (DESTAQUE, grande, verde)
+      • s-vol     → valor USD  (discreto, pequeno)
+    */
+    var volPctEl = document.getElementById('s-vol-pct');
+    volPctEl.textContent = d.volumePct ? d.volumePct.toFixed(2) + '% do MCap' : '—';
+    setText('s-vol', fmtUSD(d.volume24h));
+
+    /*
+      Volume 7D — mesmo padrão:
+      • s-vol7-pct → % do MCap (DESTAQUE)
+      • s-vol7     → valor USD total dos 7 dias (discreto)
+    */
+    var vol7PctEl = document.getElementById('s-vol7-pct');
+    if (d.volume7dPct != null) {
+      vol7PctEl.textContent = d.volume7dPct.toFixed(2) + '% do MCap';
+    } else {
+      vol7PctEl.textContent = '—';
+    }
+    setText('s-vol7', d.volume7d ? fmtUSD(d.volume7d) : '—');
+
+    /* Supply, liberado, bloqueado */
     setText('s-supply', fmtNum(d.circulatingSupply));
     document.getElementById('s-supply-pct').textContent =
       d.pctFree ? d.pctFree.toFixed(1) + '% do total' : '—';
     setText('s-total',  fmtNum(d.totalSupply));
     setText('s-lib',    d.pctFree   != null ? d.pctFree.toFixed(2)   + '%' : '—');
     setText('s-locked', d.pctLocked != null ? d.pctLocked.toFixed(2) + '%' : '—');
-    setText('s-vol7',   d.volume7d ? fmtUSD(d.volume7d) : '—');
-    setText('s-tvl',    d.tvl      ? fmtUSD(d.tvl) : 'TVL não disponível');
+    setText('s-tvl',    d.tvl       ? fmtUSD(d.tvl) : 'TVL não disponível');
 
     /* ── Contratos ── */
     buildContracts(d.contracts);
@@ -1934,13 +1967,24 @@
     var urlLlama = 'https://api.llama.fi/tvl/' + encodeURIComponent(coinId);
 
     /*
-      Ambas as chamadas disparam AO MESMO TEMPO (não sequencialmente).
-      Promise.allSettled garante que mesmo que DeFiLlama falhe,
-      o resultado do CoinGecko ainda é processado.
+      Volume 7D — CoinGecko /market_chart retorna array de volumes diários.
+      Somamos os 7 últimos pontos para ter o total da semana.
+      Depois dividimos pelo marketCap para obter o %.
+
+      Endpoint: /coins/{id}/market_chart?vs_currency=usd&days=7&interval=daily
+      Resposta: { volumes: [[timestamp, vol], ...], ... }
+    */
+    var urlVol7 = 'https://api.coingecko.com/api/v3/coins/' + encodeURIComponent(coinId)
+                + '/market_chart?vs_currency=usd&days=7&interval=daily';
+
+    /*
+      3 chamadas em paralelo:
+        [0] CoinGecko dados gerais
+        [1] DeFiLlama TVL
+        [2] CoinGecko market_chart 7D
     */
     Promise.allSettled([
       fetchWithTimeout(urlCG, 15000).then(function(r) {
-        /* CoinGecko respondeu — avança para etapa DeFiLlama visualmente */
         loadingStep('cg', 'done');
         loadingStep('llama', 'active');
         if (r.status === 429) throw new Error('HTTP 429 — rate limit');
@@ -1950,10 +1994,15 @@
       fetchWithTimeout(urlLlama, 8000).then(function(r) {
         if (!r.ok) throw new Error('sem TVL');
         return r.json();
+      }),
+      fetchWithTimeout(urlVol7, 10000).then(function(r) {
+        if (!r.ok) throw new Error('sem vol7');
+        return r.json();
       })
     ]).then(function(results) {
-      var cgResult    = results[0]; /* CoinGecko */
-      var llamaResult = results[1]; /* DeFiLlama */
+      var cgResult    = results[0];
+      var llamaResult = results[1];
+      var vol7Result  = results[2]; /* market_chart 7D */
 
       /* Se CoinGecko falhou, exibe o erro e para */
       if (cgResult.status === 'rejected') {
@@ -1988,10 +2037,31 @@
       var discordUrl     = (links.chat_url || []).find(function(u) { return u && u.includes('discord'); });
       var githubUrl      = (links.repos_url && links.repos_url.github && links.repos_url.github[0]) || null;
 
-      /* TVL — null se DeFiLlama não respondeu ou moeda sem TVL */
+      /* TVL — null se DeFiLlama não respondeu */
       var tvlValue = null;
       if (llamaResult.status === 'fulfilled' && typeof llamaResult.value === 'number') {
         tvlValue = llamaResult.value;
+      }
+
+      /*
+        Volume 7D — soma dos volumes diários dos últimos 7 dias.
+        O endpoint /market_chart?days=7&interval=daily retorna um array
+        de pares [timestamp_ms, volume_usd]. Somamos todos os valores.
+        Depois calculamos: volume7dPct = (total7d / marketCap) × 100
+      */
+      var volume7d    = null;
+      var volume7dPct = null;
+      if (vol7Result.status === 'fulfilled' && vol7Result.value && vol7Result.value.total_volumes) {
+        var vols = vol7Result.value.total_volumes;
+        /* Soma todos os volumes do período (cada item é [timestamp, volume]) */
+        var sum7d = vols.reduce(function(acc, v) { return acc + (v[1] || 0); }, 0);
+        if (sum7d > 0) {
+          volume7d = sum7d;
+          var mcapUsd = md.market_cap ? (md.market_cap.usd || 0) : 0;
+          if (mcapUsd > 0) {
+            volume7dPct = (sum7d / mcapUsd) * 100;
+          }
+        }
       }
 
       /* Calcula % liberado e % bloqueado */
@@ -2014,9 +2084,13 @@
         fdv:       md.fully_diluted_valuation ? (md.fully_diluted_valuation.usd || null) : null,
 
         volume24h: md.total_volume ? (md.total_volume.usd || 0) : 0,
+        /* volumePct = volume24h / marketCap × 100 */
         volumePct: (md.total_volume && md.market_cap && md.market_cap.usd)
                    ? (md.total_volume.usd / md.market_cap.usd * 100) : null,
-        volume7d: null, /* CoinGecko free tier não fornece */
+
+        /* Volume 7D — calculado via /market_chart (soma dos 7 dias) */
+        volume7d:    volume7d,    /* valor absoluto em USD */
+        volume7dPct: volume7dPct, /* % do market cap      */
 
         circulatingSupply: circ,
         totalSupply:       total,
